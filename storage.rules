@@ -1,0 +1,38 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Firestore 연동 헬퍼 (v2 rules 필요)
+    function getJobData(jobId) {
+      return firestore.get(/databases/(default)/documents/jobs/$(jobId)).data;
+    }
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // 사용자 역할 확인 (Firestore 조회)
+    function getUserRole() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    // [Photos] 저장 경로
+    // jobs/{jobId}/sections/{sectionId}/{type}/{photoId}.jpg
+    match /jobs/{jobId}/sections/{sectionId}/{type}/{photoId} {
+      
+      // 읽기는 인증된 사용자(Admin, Worker) 모두 가능
+      allow read: if isAuthenticated();
+
+      // 업로드 (Write)
+      allow write: if isAuthenticated() && (
+        getUserRole() == 'WORKER' && getJobData(jobId).status != 'SUBMITTED'
+      );
+
+      // 삭제 (Delete)
+      allow delete: if isAuthenticated() && (
+        getUserRole() == 'ADMIN' ||
+        (getUserRole() == 'WORKER' && getJobData(jobId).status != 'SUBMITTED')
+      );
+    }
+  }
+}

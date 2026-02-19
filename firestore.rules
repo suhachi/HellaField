@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 유저 프로필 조회 헬퍼
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // 로그인 및 프로필 존재 여부 확인
+    function isAuthenticated() {
+      return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && getUserData().role == 'ADMIN';
+    }
+
+    function isWorker() {
+      return isAuthenticated() && getUserData().role == 'WORKER';
+    }
+
+    // Job 문서 조회 헬퍼
+    function getJob(jobId) {
+      return get(/databases/$(database)/documents/jobs/$(jobId)).data;
+    }
+
+    // [Users] 컬렉션: 본인만 읽기 가능, 관리자는 모두 읽기 가능
+    match /users/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin(); // 프로필 생성/수정은 관리자만 (또는 가입 로직에 따라 조절)
+    }
+
+    // [Jobs] 컬렉션
+    match /jobs/{jobId} {
+      allow read: if isAuthenticated();
+      allow create: if isWorker();
+      allow update: if isAdmin() || (
+        isWorker() && (
+          // 제출 전에는 수정 가능
+          resource.data.status != 'SUBMITTED' && (
+            // 상태 전이 허용 케이스 명시
+            (request.resource.data.status == 'BEFORE_DONE' && resource.data.status == 'DRAFT') ||
+            (request.resource.data.status == 'SUBMITTED' && resource.data.status == 'BEFORE_DONE') ||
+            (request.resource.data.status == resource.data.status)
+          )
+        )
+      );
+      allow delete: if isAdmin();
+
+      // [Sections] 서브컬렉션
+      match /sections/{sectionId} {
+        allow read: if isAuthenticated();
+        // 부모 job의 상태를 직접 참조하여 권한 결정
+        allow create: if isWorker() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status != 'SUBMITTED';
+        allow update: if 
+          (isAdmin() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status == 'SUBMITTED') ||
+          (isWorker() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status != 'SUBMITTED');
+        allow delete: if isAdmin();
+
+        // [Photos] 서브컬렉션
+        match /photos/{photoId} {
+          allow read: if isAuthenticated();
+          allow create: if isWorker() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status != 'SUBMITTED';
+          allow update: if 
+            (isAdmin() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status == 'SUBMITTED') ||
+            (isWorker() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status != 'SUBMITTED');
+          allow delete: if isAdmin();
+        }
+      }
+    }
+
+    // [Admin Notifications]
+    match /admin_notifications/{notificationId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated(); // Worker가 제출 시 생성
+      allow update: if isAdmin(); // 읽음 처리
+      allow delete: if isAdmin();
+    }
+
+    // [App Config]
+    match /app_config/{configId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+}

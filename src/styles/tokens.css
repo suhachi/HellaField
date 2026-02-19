@@ -1,0 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+
+:root {
+    /* HellaCompany Color Tokens */
+    --hc-blue-900: #111737;
+    --hc-blue-700: #1B588D;
+    --hc-blue-500: #3857F5;
+    --hc-blue-300: #6C84FF;
+
+    --hc-gray-900: #333333;
+    --hc-gray-700: #444444;
+    --hc-gray-300: #AAAAAA;
+
+    --hc-bg: #ffffff;
+    --hc-surface: #f7f8fa;
+    --hc-border: #e5e7eb;
+
+    /* Semantic Tokens */
+    --hc-primary: var(--hc-blue-500);
+    --hc-primary-hover: var(--hc-blue-300);
+    --hc-text: var(--hc-gray-900);
+    --hc-muted: var(--hc-gray-700);
+    --hc-disabled: var(--hc-gray-300);
+    --hc-danger: #ef4444;
+    --hc-success: #22c55e;
+
+    /* Layout & Spacing */
+    --radius-lg: 12px;
+    --radius-md: 8px;
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+
+    /* Transitions */
+    --transition-fast: 0.2s ease;
+}
