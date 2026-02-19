@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import DrawingCanvas from './DrawingCanvas';
 
 const PENDING_KEY = 'hc_pending_capture_v1';
 
@@ -28,6 +29,14 @@ export default function CameraOverlay({
     const [isVideoReady, setIsVideoReady] = useState(false);
     const [opacity, setOpacity] = useState(0.35);
     const [isBusy, setIsBusy] = useState(false);
+
+    // Feature: Timestamp
+    const [useTimestamp, setUseTimestamp] = useState(true);
+
+    // Feature: Review & Drawing
+    const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
+    const [capturedUrl, setCapturedUrl] = useState<string | null>(null);
+    const [isDrawingMode, setIsDrawingMode] = useState(false);
 
     const hasGhost = type === 'AFTER' && !!beforeImageUrl;
 
@@ -91,12 +100,11 @@ export default function CameraOverlay({
         }
     };
 
-    const captureToFile = async () => {
+    const takePhoto = async () => {
         const video = videoRef.current;
         if (!video) return;
 
         savePendingMarker();
-
         setIsBusy(true);
         try {
             const w = video.videoWidth;
@@ -111,19 +119,75 @@ export default function CameraOverlay({
             if (!ctx) return;
             ctx.drawImage(video, 0, 0, w, h);
 
+            // --- Apply Timestamp if enabled ---
+            if (useTimestamp) {
+                const now = new Date();
+                const dateStr = now.toLocaleDateString('ko-KR', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                });
+                const timeStr = now.toLocaleTimeString('ko-KR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                });
+                const fullText = `${dateStr} ${timeStr}`;
+
+                // Calculate font size (approx 3% of height, min 24px)
+                const fontSize = Math.max(24, Math.floor(h * 0.03));
+                const margin = Math.floor(h * 0.02);
+
+                ctx.font = `bold ${fontSize}px sans-serif`;
+                ctx.fillStyle = 'white';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = Math.max(2, fontSize / 15);
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'bottom';
+
+                // Shadow for better visibility
+                ctx.shadowColor = 'rgba(0,0,0,0.5)';
+                ctx.shadowBlur = 4;
+                ctx.shadowOffsetX = 2;
+                ctx.shadowOffsetY = 2;
+
+                ctx.strokeText(fullText, w - margin, h - margin);
+                ctx.fillText(fullText, w - margin, h - margin);
+            }
+            // ----------------------------------
+
             const blob: Blob | null = await new Promise((resolve) =>
                 canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92)
             );
             if (!blob) return;
 
-            const file = new File([blob], `capture_${type.toLowerCase()}.jpg`, { type: 'image/jpeg' });
-            await onCaptured(file);
+            // Instead of auto-saving, go to Review Mode
+            const url = URL.createObjectURL(blob);
+            setCapturedBlob(blob);
+            setCapturedUrl(url);
 
+        } finally {
+            setIsBusy(false);
+        }
+    };
+
+    const handleConfirmSave = async (blobToSave: Blob) => {
+        setIsBusy(true);
+        try {
+            const file = new File([blobToSave], `capture_${type.toLowerCase()}.jpg`, { type: 'image/jpeg' });
+            await onCaptured(file);
             clearPendingMarker();
             onClose();
         } finally {
             setIsBusy(false);
         }
+    };
+
+    const handleRetake = () => {
+        if (capturedUrl) URL.revokeObjectURL(capturedUrl);
+        setCapturedUrl(null);
+        setCapturedBlob(null);
     };
 
     const openPicker = () => {
@@ -135,11 +199,14 @@ export default function CameraOverlay({
         const file = e.target.files?.[0];
         if (!file) return;
 
+        // For file upload, we can also offer review/draw, OR just upload directly.
+        // Let's go to review mode to allow drawing on uploaded files too!
         setIsBusy(true);
         try {
-            await onCaptured(file);
-            clearPendingMarker();
-            onClose();
+            const blob = file.slice(0, file.size, file.type);
+            const url = URL.createObjectURL(blob);
+            setCapturedBlob(blob);
+            setCapturedUrl(url);
         } finally {
             setIsBusy(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -151,6 +218,42 @@ export default function CameraOverlay({
         onClose();
     };
 
+    // --- Render: Drawing Mode ---
+    if (isDrawingMode && capturedUrl) {
+        return (
+            <DrawingCanvas
+                imageUrl={capturedUrl}
+                onSave={(file) => handleConfirmSave(file)}
+                onCancel={() => setIsDrawingMode(false)}
+            />
+        );
+    }
+
+    // --- Render: Review Mode ---
+    if (capturedUrl && capturedBlob) {
+        return (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: '#000', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                    <img src={capturedUrl} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                </div>
+
+                <div style={{ padding: 24, background: '#111', display: 'flex', gap: 16 }}>
+                    <button onClick={handleRetake} style={{ flex: 1, padding: '16px', background: '#374151', color: '#fff', borderRadius: 8 }}>
+                        재촬영
+                    </button>
+                    <button onClick={() => setIsDrawingMode(true)} style={{ flex: 1, padding: '16px', background: '#3b82f6', color: '#fff', borderRadius: 8 }}>
+                        🖊️ 그리기
+                    </button>
+                    <button onClick={() => handleConfirmSave(capturedBlob)} style={{ flex: 1, padding: '16px', background: '#2563eb', color: '#fff', borderRadius: 8, fontWeight: 'bold' }}>
+                        저장
+                    </button>
+                </div>
+                {isBusy && <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>저장 중...</div>}
+            </div>
+        );
+    }
+
+    // --- Render: Camera Mode ---
     return (
         <div
             style={{
@@ -210,6 +313,29 @@ export default function CameraOverlay({
                     zIndex: 20
                 }}
             >
+                {/* Timestamp Toggle Button (Left) */}
+                <button
+                    onClick={() => setUseTimestamp(!useTimestamp)}
+                    style={{
+                        position: 'absolute',
+                        left: 20,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: useTimestamp ? 'rgba(59, 130, 246, 0.8)' : 'rgba(0,0,0,0.3)',
+                        color: '#fff',
+                        padding: '6px 12px',
+                        borderRadius: 20,
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        border: '1px solid rgba(255,255,255,0.2)'
+                    }}
+                >
+                    {useTimestamp ? '🕒 ON' : '🕒 OFF'}
+                </button>
+
                 <div
                     style={{
                         background: 'rgba(0,0,0,0.5)',
@@ -309,7 +435,7 @@ export default function CameraOverlay({
 
                     {/* Center: Shutter Button */}
                     <button
-                        onClick={captureToFile}
+                        onClick={takePhoto}
                         disabled={!isVideoReady || isBusy}
                         style={{
                             width: 72,

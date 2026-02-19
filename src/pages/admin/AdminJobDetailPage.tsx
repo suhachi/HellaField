@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     collection,
@@ -14,6 +14,9 @@ import {
 import { db } from '../../lib/firebase';
 import { deleteObject, ref } from 'firebase/storage';
 import { storage } from '../../lib/firebase';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+import ReportTemplate from '../../components/admin/ReportTemplate';
 
 // Local minimal types (keep scope small)
 interface Job {
@@ -61,6 +64,9 @@ export default function AdminJobDetailPage() {
     const [sections, setSections] = useState<Section[]>([]);
     const [photosBySection, setPhotosBySection] = useState<Record<string, Photo[]>>({});
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+    const reportRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!jobId) return;
@@ -201,6 +207,52 @@ export default function AdminJobDetailPage() {
         await updateDoc(doc(db, 'jobs', jobId), { status: 'SUBMITTED' });
     };
 
+    const handleDownloadPDF = async () => {
+        if (!reportRef.current || !job) return;
+
+        setIsGeneratingPdf(true);
+        try {
+            // 1. Capture the hidden report component
+            const canvas = await html2canvas(reportRef.current, {
+                scale: 2, // Higher resolution
+                useCORS: true, // Allow loading remote images
+                logging: false,
+                backgroundColor: '#ffffff'
+            });
+
+            // 2. Create PDF
+            const imgData = canvas.toDataURL('image/jpeg', 0.9);
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth(); // 210mm
+            const pdfHeight = pdf.internal.pageSize.getHeight(); // 297mm
+            const imgProps = pdf.getImageProperties(imgData);
+            const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+            // 3. Handle multi-page (if content is too long)
+            let heightLeft = imgHeight;
+            let position = 0;
+
+            pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeight);
+            heightLeft -= pdfHeight;
+
+            while (heightLeft > 0) {
+                position = heightLeft - imgHeight; // Move up
+                pdf.addPage();
+                pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeight);
+                heightLeft -= pdfHeight;
+            }
+
+            const safeDate = typeof job.date === 'string' ? job.date : 'report';
+            pdf.save(`${safeDate}_${sanitizeFilePart(job.siteTitle)}.pdf`);
+
+        } catch (e) {
+            console.error('PDF Generation failed:', e);
+            alert('PDF 생성에 실패했습니다. (콘솔 확인)');
+        } finally {
+            setIsGeneratingPdf(false);
+        }
+    };
+
     if (!jobId) return <div style={{ padding: 16 }}>잘못된 접근입니다.</div>;
 
     return (
@@ -221,7 +273,23 @@ export default function AdminJobDetailPage() {
                         <div style={{ opacity: 0.8 }}>상태: {job.status}</div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                        <button
+                            onClick={handleDownloadPDF}
+                            disabled={isGeneratingPdf}
+                            style={{
+                                padding: '8px 12px',
+                                background: '#2563eb',
+                                color: '#fff',
+                                fontWeight: 'bold',
+                                borderRadius: '4px'
+                            }}
+                        >
+                            {isGeneratingPdf ? 'PDF 생성 중...' : '📄 PDF 리포트 다운로드'}
+                        </button>
+
+                        <div style={{ flex: 1 }} />
+
                         <button onClick={handleDeleteJobTotal} disabled={isDeleting} style={{ padding: '8px 12px' }}>
                             {isDeleting ? '삭제 중...' : '전체 삭제'}
                         </button>
@@ -298,6 +366,16 @@ export default function AdminJobDetailPage() {
                         );
                     })}
                 </>
+            )}
+
+            {/* Hidden Report Template */}
+            {job && (
+                <ReportTemplate
+                    ref={reportRef}
+                    job={job}
+                    sections={sections}
+                    photosBySection={photosBySection}
+                />
             )}
         </div>
     );
