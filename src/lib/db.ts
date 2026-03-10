@@ -46,7 +46,9 @@ export interface Photo {
     storagePath: string;
     originalFileName: string;
     downloadUrl: string; // PUBLIC download URL with token (Required for SSOT)
+    title?: string | null; // NEW: Admin custom title
     createdAt: Timestamp;
+    updatedAt?: Timestamp; // NEW: Track title edits
     deletedAt: Timestamp | null;
 }
 
@@ -172,6 +174,13 @@ export const softDeletePhoto = async (jobId: string, sectionId: string, photoId:
 
     await updateDoc(doc(db, 'jobs', jobId, 'sections', sectionId, 'photos', photoId), {
         deletedAt: serverTimestamp()
+    });
+};
+
+export const updatePhotoTitle = async (jobId: string, sectionId: string, photoId: string, title: string | null) => {
+    await updateDoc(doc(db, 'jobs', jobId, 'sections', sectionId, 'photos', photoId), {
+        title,
+        updatedAt: serverTimestamp()
     });
 };
 

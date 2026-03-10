@@ -123,6 +123,20 @@ export default defineConfig([
                     "order": "DESCENDING"
                 }
             ]
+        },
+        {
+            "collectionGroup": "photos",
+            "queryScope": "COLLECTION_GROUP",
+            "fields": [
+                {
+                    "fieldPath": "deletedAt",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "ASCENDING"
+                }
+            ]
         }
     ],
     "fieldOverrides": []
@@ -250,6 +264,8 @@ service cloud.firestore {
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "firebase": "^11.3.1",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.0",
     "lucide-react": "^0.564.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

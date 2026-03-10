@@ -1,4 +1,4 @@
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage } from '../lib/firebase';
 import { addPhotoDoc, softDeletePhoto } from '../lib/db';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,7 +13,8 @@ export const uploadPhoto = async (
     file: File,
     jobId: string,
     sectionId: string,
-    type: 'BEFORE' | 'AFTER'
+    type: 'BEFORE' | 'AFTER',
+    onProgress?: (progress: number) => void
 ) => {
     const photoId = uuidv4();
     const fileExtension = file.name.split('.').pop() || 'jpg';
@@ -21,10 +22,32 @@ export const uploadPhoto = async (
     const storagePath = `jobs/${jobId}/sections/${sectionId}/${type.toLowerCase()}/${photoId}.${fileExtension}`;
     const storageRef = ref(storage, storagePath);
 
-    const uploadResult = await uploadBytes(storageRef, file);
+    // Metadata with public cache control
+    const metadata = {
+        cacheControl: 'public,max-age=31536000',
+    };
+
+    const uploadTask = uploadBytesResumable(storageRef, file, metadata);
+
+    // Await upload completion and report progress
+    await new Promise<void>((resolve, reject) => {
+        uploadTask.on(
+            'state_changed',
+            (snapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                if (onProgress) onProgress(progress);
+            },
+            (error) => {
+                reject(error);
+            },
+            () => {
+                resolve();
+            }
+        );
+    });
 
     // 토큰 포함 공개 URL (SSOT 핵심)
-    const downloadUrl = await getDownloadURL(uploadResult.ref);
+    const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
 
     const docId = await addPhotoDoc({
         jobId,

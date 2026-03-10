@@ -10,6 +10,7 @@ interface AuthContextType {
     loading: boolean;
     isAdmin: boolean;
     isWorker: boolean;
+    signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -18,6 +19,7 @@ const AuthContext = createContext<AuthContextType>({
     loading: true,
     isAdmin: false,
     isWorker: false,
+    signOut: async () => { }, // Dummy function
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -60,6 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loading,
         isAdmin: profile?.role === 'ADMIN',
         isWorker: profile?.role === 'WORKER',
+        signOut: () => auth.signOut(),
     };
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

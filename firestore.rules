@@ -54,7 +54,7 @@ service cloud.firestore {
         // 부모 job의 상태를 직접 참조하여 권한 결정
         allow create: if isWorker() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status != 'SUBMITTED';
         allow update: if 
-          (isAdmin() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status == 'SUBMITTED') ||
+          isAdmin() ||
           (isWorker() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status != 'SUBMITTED');
         allow delete: if isAdmin();
 
@@ -62,9 +62,15 @@ service cloud.firestore {
         match /photos/{photoId} {
           allow read: if isAuthenticated();
           allow create: if isWorker() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status != 'SUBMITTED';
+          
           allow update: if 
-            (isAdmin() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status == 'SUBMITTED') ||
-            (isWorker() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status != 'SUBMITTED');
+            isAdmin() || // Admin can always update (including title) even if SUBMITTED
+            (
+              isWorker() && 
+              get(/databases/$(database)/documents/jobs/$(jobId)).data.status != 'SUBMITTED' &&
+              !("title" in request.resource.data) // Worker cannot update title
+            );
+
           allow delete: if isAdmin();
         }
       }

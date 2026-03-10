@@ -2,11 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 
 type Props = {
     imageUrl: string;
+    preset: import('../../lib/imageOptimize').ImageQualityPreset; // Pass preset down
     onSave: (file: File) => void;
     onCancel: () => void;
 };
 
-export default function DrawingCanvas({ imageUrl, onSave, onCancel }: Props) {
+import { optimizeImage } from '../../lib/imageOptimize';
+
+export default function DrawingCanvas({ imageUrl, preset, onSave, onCancel }: Props) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [color, setColor] = useState<'#ef4444' | '#ffffff'>('#ef4444'); // Red-500 or White
@@ -97,14 +100,22 @@ export default function DrawingCanvas({ imageUrl, onSave, onCancel }: Props) {
         }
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        canvas.toBlob((blob) => {
+        canvas.toBlob(async (blob) => {
             if (blob) {
-                const file = new File([blob], "annotated_image.jpg", { type: "image/jpeg" });
-                onSave(file);
+                try {
+                    const optimizedBlob = await optimizeImage(blob, { preset });
+                    const file = new File([optimizedBlob], "annotated_image.jpg", { type: "image/jpeg" });
+                    onSave(file);
+                } catch (e) {
+                    console.error("DrawingCanvas optimize failed:", e);
+                    // Fallback to unoptimized
+                    const file = new File([blob], "annotated_image.jpg", { type: "image/jpeg" });
+                    onSave(file);
+                }
             }
         }, 'image/jpeg', 0.92);
     };

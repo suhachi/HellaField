@@ -38,7 +38,7 @@ interface AuthContextType {
     profile: { role: UserRole | null } | null; // AppLayout 호환용
     loading: boolean;
     hasProfile: boolean;
-    logout: () => Promise<void>;
+    signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -105,7 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         profile,
         loading,
         hasProfile,
-        logout
+        signOut: logout // Expose as signOut to match usage
     }), [user, role, profile, loading, hasProfile]);
 
     return (
@@ -187,6 +187,7 @@ interface AuthContextType {
     loading: boolean;
     isAdmin: boolean;
     isWorker: boolean;
+    signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -195,6 +196,7 @@ const AuthContext = createContext<AuthContextType>({
     loading: true,
     isAdmin: false,
     isWorker: false,
+    signOut: async () => { }, // Dummy function
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -237,6 +239,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loading,
         isAdmin: profile?.role === 'ADMIN',
         isWorker: profile?.role === 'WORKER',
+        signOut: () => auth.signOut(),
     };
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -299,7 +302,7 @@ export interface Photo {
     type: 'BEFORE' | 'AFTER';
     storagePath: string;
     originalFileName: string;
-    downloadUrl?: string | null; // PUBLIC download URL with token
+    downloadUrl: string; // PUBLIC download URL with token (Required for SSOT)
     createdAt: Timestamp;
     deletedAt: Timestamp | null;
 }
@@ -393,6 +396,9 @@ export const updateSection = async (jobId: string, sectionId: string, data: Part
 const getPhotosCol = (jobId: string, sectionId: string) =>
     collection(db, 'jobs', jobId, 'sections', sectionId, 'photos').withConverter(converter<Photo>());
 
+/**
+ * addPhotoDoc: downloadUrl is a required field for SSOT compliance.
+ */
 export const addPhotoDoc = async (photoData: Omit<Photo, 'id' | 'createdAt' | 'deletedAt'>) => {
     const { jobId, sectionId } = photoData;
     const docRef = await addDoc(getPhotosCol(jobId, sectionId), {
@@ -449,21 +455,16 @@ export const getRetentionConfig = async () => {
     }
     return { retentionDays: 14, enabled: true };
 };
+
 // --- API: Delete Entire Job (Admin Only) ---
 
 export const deleteJobTotal = async (jobId: string) => {
-    // 1. 섹션 목록 가져오기
     const sections = await listSections(jobId);
-
     for (const section of sections) {
-        // 2. 각 섹션의 사진(삭제되지 않은 것 + 이미 삭제된 것 모두) 가져오기
-        // listPhotos는 deletedAt == null인 것만 가져오므로, 전체 조회가 필요함
         const photosCol = collection(db, 'jobs', jobId, 'sections', section.id, 'photos');
         const photoSnap = await getDocs(photosCol);
-
         for (const pDoc of photoSnap.docs) {
             const photo = pDoc.data() as Photo;
-            // 3. Storage 파일 삭제 (이미 소프트 삭제된 경우 파일이 없으므로 건너뜀)
             if (!photo.deletedAt) {
                 try {
                     const fileRef = ref(storage, photo.storagePath);
@@ -472,22 +473,15 @@ export const deleteJobTotal = async (jobId: string) => {
                     console.warn("Cleanup: Storage file delete failed:", photo.storagePath);
                 }
             }
-            // 4. 사진 문서 삭제
             await deleteDoc(pDoc.ref);
         }
-
-        // 5. 섹션 문서 삭제
         await deleteDoc(doc(db, 'jobs', jobId, 'sections', section.id));
     }
-
-    // 6. 관련 알림 삭제
     const notifQuery = query(collection(db, 'admin_notifications'), where('jobId', '==', jobId));
     const notifSnap = await getDocs(notifQuery);
     for (const nDoc of notifSnap.docs) {
         await deleteDoc(nDoc.ref);
     }
-
-    // 7. 작업 문서 최종 삭제
     await deleteDoc(doc(db, 'jobs', jobId));
 };
 
@@ -540,15 +534,16 @@ export default app;
 ## src/services/photoService.ts
 
 ```typescript
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../lib/firebase';
 import { addPhotoDoc, softDeletePhoto } from '../lib/db';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
- * 전/후 사진 업로드 통합 프로세스
- * 1. Storage 업로드 (jobs/{jobId}/sections/{sectionId}/{type}/{photoId}.jpg)
- * 2. Firestore Photo 문서 생성
+ * 전/후 사진 업로드 통합 프로세스 (SSOT)
+ * 1) Storage 업로드
+ * 2) downloadUrl(getDownloadURL) 획득
+ * 3) Firestore Photo 문서 생성 (downloadUrl 필수 포함)
  */
 export const uploadPhoto = async (
     file: File,
@@ -558,31 +553,33 @@ export const uploadPhoto = async (
 ) => {
     const photoId = uuidv4();
     const fileExtension = file.name.split('.').pop() || 'jpg';
-    const storagePath = `jobs/${jobId}/sections/${sectionId}/${type.toLowerCase()}/${photoId}.${fileExtension}`;
 
+    const storagePath = `jobs/${jobId}/sections/${sectionId}/${type.toLowerCase()}/${photoId}.${fileExtension}`;
     const storageRef = ref(storage, storagePath);
 
-    // 1. Storage 업로드
     const uploadResult = await uploadBytes(storageRef, file);
+
+    // 토큰 포함 공개 URL (SSOT 핵심)
     const downloadUrl = await getDownloadURL(uploadResult.ref);
 
-    // 2. Firestore 문서 기록
     const docId = await addPhotoDoc({
         jobId,
         sectionId,
         type,
         storagePath,
-        downloadUrl, // Persist the token-authenticated URL
+        downloadUrl,
         originalFileName: file.name
     });
 
     return { id: docId, url: downloadUrl, storagePath };
 };
 
-/**
- * 사진 삭제 (Storage 실삭제 + Firestore Soft Delete)
- */
-export const deletePhoto = async (jobId: string, sectionId: string, photoId: string, storagePath: string) => {
+export const deletePhoto = async (
+    jobId: string,
+    sectionId: string,
+    photoId: string,
+    storagePath: string
+) => {
     return await softDeletePhoto(jobId, sectionId, photoId, storagePath);
 };
 

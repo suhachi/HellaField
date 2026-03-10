@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     collection,
@@ -9,7 +9,8 @@ import {
     query,
     Timestamp,
     updateDoc,
-    where
+    where,
+    serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { deleteObject, ref } from 'firebase/storage';
@@ -46,6 +47,7 @@ interface Photo {
     storagePath: string;
     originalFileName: string;
     downloadUrl: string;
+    title?: string | null;
     createdAt: Timestamp;
     deletedAt: Timestamp | null;
 }
@@ -65,6 +67,16 @@ export default function AdminJobDetailPage() {
     const [photosBySection, setPhotosBySection] = useState<Record<string, Photo[]>>({});
     const [isDeleting, setIsDeleting] = useState(false);
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+    // Title Editing State (Photos)
+    const [editingPhotoId, setEditingPhotoId] = useState<string | null>(null);
+    const [editingTitleValue, setEditingTitleValue] = useState<string>('');
+    const [isSavingTitle, setIsSavingTitle] = useState(false);
+
+    // Section Title Editing State
+    const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+    const [editingSectionValue, setEditingSectionValue] = useState<string>('');
+    const [isSavingSection, setIsSavingSection] = useState(false);
 
     const reportRef = useRef<HTMLDivElement>(null);
 
@@ -169,6 +181,71 @@ export default function AdminJobDetailPage() {
         await deleteDoc(doc(db, 'jobs', jobId, 'sections', photo.sectionId, 'photos', photo.id));
     };
 
+    const handleEditTitleStart = (photo: Photo) => {
+        setEditingPhotoId(photo.id);
+        setEditingTitleValue(photo.title || '');
+    };
+
+    const handleEditTitleCancel = () => {
+        setEditingPhotoId(null);
+        setEditingTitleValue('');
+    };
+
+    const handleEditTitleSave = async (sectionId: string, photoId: string) => {
+        if (!jobId) return;
+
+        const trimmed = editingTitleValue.trim();
+        const finalTitle = trimmed === '' ? null : trimmed.substring(0, 60);
+
+        setIsSavingTitle(true);
+        try {
+            await updateDoc(doc(db, 'jobs', jobId, 'sections', sectionId, 'photos', photoId), {
+                title: finalTitle,
+                updatedAt: serverTimestamp()
+            });
+            setEditingPhotoId(null);
+        } catch (e) {
+            console.error("Failed to update title:", e);
+            alert("제목 저장에 실패했습니다.");
+        } finally {
+            setIsSavingTitle(false);
+        }
+    };
+
+    // Section Edit Handlers
+    const handleEditSectionStart = (section: Section) => {
+        setEditingSectionId(section.id);
+        setEditingSectionValue(section.title);
+    };
+
+    const handleEditSectionCancel = () => {
+        setEditingSectionId(null);
+        setEditingSectionValue('');
+    };
+
+    const handleEditSectionSave = async (sectionId: string) => {
+        if (!jobId) return;
+        const trimmed = editingSectionValue.trim();
+        if (!trimmed) {
+            alert("구역 제목을 입력해주세요.");
+            return;
+        }
+
+        setIsSavingSection(true);
+        try {
+            await updateDoc(doc(db, 'jobs', jobId, 'sections', sectionId), {
+                title: trimmed.substring(0, 60),
+                updatedAt: serverTimestamp()
+            });
+            setEditingSectionId(null);
+        } catch (e) {
+            console.error("Failed to update section title:", e);
+            alert("구역 제목 저장에 실패했습니다.");
+        } finally {
+            setIsSavingSection(false);
+        }
+    };
+
     const handleDeleteJobTotal = async () => {
         if (!jobId) return;
         const ok = confirm('이 작업을 완전히 삭제할까요? (모든 섹션/사진 포함)');
@@ -212,34 +289,29 @@ export default function AdminJobDetailPage() {
 
         setIsGeneratingPdf(true);
         try {
-            // 1. Capture the hidden report component
-            const canvas = await html2canvas(reportRef.current, {
-                scale: 2, // Higher resolution
-                useCORS: true, // Allow loading remote images
-                logging: false,
-                backgroundColor: '#ffffff'
-            });
-
-            // 2. Create PDF
-            const imgData = canvas.toDataURL('image/jpeg', 0.9);
+            // 1. Get all A4 pages
+            const pages = reportRef.current.querySelectorAll('.pdf-page');
             const pdf = new jsPDF('p', 'mm', 'a4');
             const pdfWidth = pdf.internal.pageSize.getWidth(); // 210mm
             const pdfHeight = pdf.internal.pageSize.getHeight(); // 297mm
-            const imgProps = pdf.getImageProperties(imgData);
-            const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
-            // 3. Handle multi-page (if content is too long)
-            let heightLeft = imgHeight;
-            let position = 0;
+            for (let i = 0; i < pages.length; i++) {
+                const pageEl = pages[i] as HTMLElement;
+                const canvas = await html2canvas(pageEl, {
+                    scale: 2, // Higher resolution
+                    useCORS: true, // Allow loading remote images
+                    logging: false,
+                    backgroundColor: '#ffffff'
+                });
 
-            pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeight);
-            heightLeft -= pdfHeight;
-
-            while (heightLeft > 0) {
-                position = heightLeft - imgHeight; // Move up
-                pdf.addPage();
-                pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeight);
-                heightLeft -= pdfHeight;
+                const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                
+                if (i > 0) {
+                    pdf.addPage();
+                }
+                
+                // Add image directly filling the A4 page (proportions are matched by CSS)
+                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
             }
 
             const safeDate = typeof job.date === 'string' ? job.date : 'report';
@@ -307,7 +379,60 @@ export default function AdminJobDetailPage() {
 
                         return (
                             <div key={section.id} style={{ marginBottom: 24 }}>
-                                <h3 style={{ margin: '12px 0' }}>{section.title}</h3>
+                                {/* Section Title Header with Edit UI */}
+                                {editingSectionId === section.id ? (
+                                    <div style={{ display: 'flex', gap: 8, margin: '12px 0', alignItems: 'center' }}>
+                                        <input
+                                            type="text"
+                                            value={editingSectionValue}
+                                            onChange={(e) => setEditingSectionValue(e.target.value)}
+                                            disabled={isSavingSection}
+                                            maxLength={60}
+                                            style={{
+                                                fontSize: '1.2em',
+                                                fontWeight: 'bold',
+                                                padding: '4px 8px',
+                                                border: '1px solid #3b82f6',
+                                                borderRadius: 4,
+                                                flex: 1,
+                                                maxWidth: '400px'
+                                            }}
+                                            autoFocus
+                                        />
+                                        <button
+                                            onClick={() => handleEditSectionSave(section.id)}
+                                            disabled={isSavingSection}
+                                            style={{ padding: '6px 12px', background: '#3b82f6', color: '#fff', borderRadius: 4, fontWeight: 'bold' }}
+                                        >
+                                            저장
+                                        </button>
+                                        <button
+                                            onClick={handleEditSectionCancel}
+                                            disabled={isSavingSection}
+                                            style={{ padding: '6px 12px', background: '#e2e8f0', borderRadius: 4 }}
+                                        >
+                                            취소
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '12px 0' }}>
+                                        <h3 style={{ margin: 0 }}>{section.title}</h3>
+                                        <button
+                                            onClick={() => handleEditSectionStart(section)}
+                                            style={{
+                                                fontSize: 12,
+                                                padding: '4px 8px',
+                                                background: '#f1f5f9',
+                                                color: '#64748b',
+                                                border: '1px solid #e2e8f0',
+                                                borderRadius: 4,
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            구역명 수정
+                                        </button>
+                                    </div>
+                                )}
 
                                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                                     <div style={{ width: '100%', maxWidth: '500px' }}>
@@ -315,24 +440,57 @@ export default function AdminJobDetailPage() {
                                         {befores.length === 0 ? (
                                             <div style={{ opacity: 0.7 }}>없음</div>
                                         ) : (
-                                            befores.map((p, idx) => (
-                                                <div key={p.id} style={{ marginBottom: 10 }}>
-                                                    <img
-                                                        src={p.downloadUrl}
-                                                        alt="before"
-                                                        style={{ width: '100%', height: 'auto', borderRadius: 8, display: 'block', cursor: 'pointer' }}
-                                                        onClick={() => handleDownload(p, section.title, idx)}
-                                                    />
-                                                    <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                                                        <button onClick={() => handleDownload(p, section.title, idx)} style={{ padding: '6px 10px' }}>
-                                                            다운로드
-                                                        </button>
-                                                        <button onClick={() => handleDeletePhoto(p)} style={{ padding: '6px 10px' }}>
-                                                            삭제
-                                                        </button>
+                                            befores.map((p, idx) => {
+                                                const fallbackTitle = `비포 ${idx + 1}`;
+                                                return (
+                                                    <div key={p.id} style={{ marginBottom: 10, background: '#f8fafc', padding: 8, borderRadius: 8 }}>
+                                                        <img
+                                                            src={p.downloadUrl}
+                                                            alt="before"
+                                                            style={{ width: '100%', height: 'auto', borderRadius: 8, display: 'block', cursor: 'pointer', marginBottom: 8 }}
+                                                            onClick={() => handleDownload(p, section.title, idx)}
+                                                        />
+
+                                                        {/* Title Editing UI */}
+                                                        {editingPhotoId === p.id ? (
+                                                            <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+                                                                <input
+                                                                    type="text"
+                                                                    value={editingTitleValue}
+                                                                    onChange={(e) => setEditingTitleValue(e.target.value)}
+                                                                    placeholder={fallbackTitle}
+                                                                    disabled={isSavingTitle}
+                                                                    maxLength={60}
+                                                                    style={{ flex: 1, padding: '4px 8px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                                                                    autoFocus
+                                                                />
+                                                                <button onClick={() => handleEditTitleSave(section.id, p.id)} disabled={isSavingTitle} style={{ padding: '4px 8px', background: '#3b82f6', color: '#fff', borderRadius: 4 }}>
+                                                                    저장
+                                                                </button>
+                                                                <button onClick={handleEditTitleCancel} disabled={isSavingTitle} style={{ padding: '4px 8px', background: '#e2e8f0' }}>
+                                                                    취소
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                                                <div style={{ fontWeight: 600, fontSize: 14 }}>{p.title || fallbackTitle}</div>
+                                                                <button onClick={() => handleEditTitleStart(p)} style={{ fontSize: 12, padding: '2px 6px', background: '#e2e8f0', borderRadius: 4 }}>
+                                                                    제목 수정
+                                                                </button>
+                                                            </div>
+                                                        )}
+
+                                                        <div style={{ display: 'flex', gap: 8 }}>
+                                                            <button onClick={() => handleDownload(p, section.title, idx)} style={{ padding: '6px 10px', flex: 1 }}>
+                                                                다운로드
+                                                            </button>
+                                                            <button onClick={() => handleDeletePhoto(p)} style={{ padding: '6px 10px', background: '#fee2e2', color: '#dc2626', border: 'none' }}>
+                                                                삭제
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ))
+                                                )
+                                            })
                                         )}
                                     </div>
 
@@ -341,24 +499,57 @@ export default function AdminJobDetailPage() {
                                         {afters.length === 0 ? (
                                             <div style={{ opacity: 0.7 }}>없음</div>
                                         ) : (
-                                            afters.map((p, idx) => (
-                                                <div key={p.id} style={{ marginBottom: 10 }}>
-                                                    <img
-                                                        src={p.downloadUrl}
-                                                        alt="after"
-                                                        style={{ width: '100%', height: 'auto', borderRadius: 8, display: 'block', cursor: 'pointer' }}
-                                                        onClick={() => handleDownload(p, section.title, idx)}
-                                                    />
-                                                    <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                                                        <button onClick={() => handleDownload(p, section.title, idx)} style={{ padding: '6px 10px' }}>
-                                                            다운로드
-                                                        </button>
-                                                        <button onClick={() => handleDeletePhoto(p)} style={{ padding: '6px 10px' }}>
-                                                            삭제
-                                                        </button>
+                                            afters.map((p, idx) => {
+                                                const fallbackTitle = `애프터 ${idx + 1}`;
+                                                return (
+                                                    <div key={p.id} style={{ marginBottom: 10, background: '#f8fafc', padding: 8, borderRadius: 8 }}>
+                                                        <img
+                                                            src={p.downloadUrl}
+                                                            alt="after"
+                                                            style={{ width: '100%', height: 'auto', borderRadius: 8, display: 'block', cursor: 'pointer', marginBottom: 8 }}
+                                                            onClick={() => handleDownload(p, section.title, idx)}
+                                                        />
+
+                                                        {/* Title Editing UI */}
+                                                        {editingPhotoId === p.id ? (
+                                                            <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+                                                                <input
+                                                                    type="text"
+                                                                    value={editingTitleValue}
+                                                                    onChange={(e) => setEditingTitleValue(e.target.value)}
+                                                                    placeholder={fallbackTitle}
+                                                                    disabled={isSavingTitle}
+                                                                    maxLength={60}
+                                                                    style={{ flex: 1, padding: '4px 8px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                                                                    autoFocus
+                                                                />
+                                                                <button onClick={() => handleEditTitleSave(section.id, p.id)} disabled={isSavingTitle} style={{ padding: '4px 8px', background: '#3b82f6', color: '#fff', borderRadius: 4 }}>
+                                                                    저장
+                                                                </button>
+                                                                <button onClick={handleEditTitleCancel} disabled={isSavingTitle} style={{ padding: '4px 8px', background: '#e2e8f0' }}>
+                                                                    취소
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                                                <div style={{ fontWeight: 600, fontSize: 14 }}>{p.title || fallbackTitle}</div>
+                                                                <button onClick={() => handleEditTitleStart(p)} style={{ fontSize: 12, padding: '2px 6px', background: '#e2e8f0', borderRadius: 4 }}>
+                                                                    제목 수정
+                                                                </button>
+                                                            </div>
+                                                        )}
+
+                                                        <div style={{ display: 'flex', gap: 8 }}>
+                                                            <button onClick={() => handleDownload(p, section.title, idx)} style={{ padding: '6px 10px', flex: 1 }}>
+                                                                다운로드
+                                                            </button>
+                                                            <button onClick={() => handleDeletePhoto(p)} style={{ padding: '6px 10px', background: '#fee2e2', color: '#dc2626', border: 'none' }}>
+                                                                삭제
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ))
+                                                )
+                                            })
                                         )}
                                     </div>
                                 </div>

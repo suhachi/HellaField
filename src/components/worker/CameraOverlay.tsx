@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DrawingCanvas from './DrawingCanvas';
+import type { ImageQualityPreset } from '../../lib/imageOptimize';
+import { optimizeImage } from '../../lib/imageOptimize';
 
 const PENDING_KEY = 'hc_pending_capture_v1';
 
@@ -30,8 +32,25 @@ export default function CameraOverlay({
     const [opacity, setOpacity] = useState(0.35);
     const [isBusy, setIsBusy] = useState(false);
 
-    // Feature: Timestamp
-    const [useTimestamp, setUseTimestamp] = useState(true);
+    // Feature: Timestamp (Force OFF on start as requested)
+    const [useTimestamp, setUseTimestamp] = useState<boolean>(false);
+
+    // Feature: Preset & Grid (Force defaults ON start as requested)
+    const [preset, setPreset] = useState<ImageQualityPreset>('HQ_1600'); // 중간(고화질)
+    const [useGrid, setUseGrid] = useState<boolean>(true); // 기본 ON
+
+    // Keep saving to localStorage if desired, but we reset on mount every time.
+    useEffect(() => {
+        localStorage.setItem('hc_camera_timestamp_enabled_v3', String(useTimestamp));
+    }, [useTimestamp]);
+
+    useEffect(() => {
+        localStorage.setItem('hc_camera_quality_preset_v3', preset);
+    }, [preset]);
+
+    useEffect(() => {
+        localStorage.setItem('hc_camera_grid_enabled_v3', String(useGrid));
+    }, [useGrid]);
 
     // Feature: Review & Drawing
     const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
@@ -157,17 +176,26 @@ export default function CameraOverlay({
             }
             // ----------------------------------
 
-            const blob: Blob | null = await new Promise((resolve) =>
-                canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92)
-            );
-            if (!blob) return;
+            // Optimize the drawn canvas blob directly
+            canvas.toBlob(async (rawBlob) => {
+                if (!rawBlob) {
+                    setIsBusy(false);
+                    return;
+                }
+                try {
+                    const optimizedBlob = await optimizeImage(rawBlob, { preset });
+                    const url = URL.createObjectURL(optimizedBlob);
+                    setCapturedBlob(optimizedBlob);
+                    setCapturedUrl(url);
+                } catch (err) {
+                    console.error("Camera optimize image failed:", err);
+                } finally {
+                    setIsBusy(false);
+                }
+            }, 'image/jpeg', 0.8);
 
-            // Instead of auto-saving, go to Review Mode
-            const url = URL.createObjectURL(blob);
-            setCapturedBlob(blob);
-            setCapturedUrl(url);
-
-        } finally {
+        } catch (e) {
+            console.error("takePhoto error", e);
             setIsBusy(false);
         }
     };
@@ -199,14 +227,14 @@ export default function CameraOverlay({
         const file = e.target.files?.[0];
         if (!file) return;
 
-        // For file upload, we can also offer review/draw, OR just upload directly.
-        // Let's go to review mode to allow drawing on uploaded files too!
         setIsBusy(true);
         try {
-            const blob = file.slice(0, file.size, file.type);
-            const url = URL.createObjectURL(blob);
-            setCapturedBlob(blob);
+            const optimizedBlob = await optimizeImage(file, { preset });
+            const url = URL.createObjectURL(optimizedBlob);
+            setCapturedBlob(optimizedBlob);
             setCapturedUrl(url);
+        } catch (e) {
+            console.error("File picker optimize image failed:", e);
         } finally {
             setIsBusy(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -223,6 +251,7 @@ export default function CameraOverlay({
         return (
             <DrawingCanvas
                 imageUrl={capturedUrl}
+                preset={preset}
                 onSave={(file) => handleConfirmSave(file)}
                 onCancel={() => setIsDrawingMode(false)}
             />
@@ -280,6 +309,33 @@ export default function CameraOverlay({
                     }}
                 />
 
+                {/* Grid Overlay */}
+                {useGrid && (
+                    <div
+                        style={{
+                            position: 'absolute',
+                            inset: 0,
+                            pointerEvents: 'none',
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr 1fr',
+                            gridTemplateRows: '1fr 1fr 1fr',
+                        }}
+                    >
+                        <div style={{ borderRight: '1px solid rgba(255,255,255,0.4)', borderBottom: '1px solid rgba(255,255,255,0.4)' }} />
+                        <div style={{ borderRight: '1px solid rgba(255,255,255,0.4)', borderBottom: '1px solid rgba(255,255,255,0.4)' }} />
+                        <div style={{ borderBottom: '1px solid rgba(255,255,255,0.4)' }} />
+
+                        <div style={{ borderRight: '1px solid rgba(255,255,255,0.4)', borderBottom: '1px solid rgba(255,255,255,0.4)' }} />
+                        <div style={{ borderRight: '1px solid rgba(255,255,255,0.4)', borderBottom: '1px solid rgba(255,255,255,0.4)' }} />
+                        <div style={{ borderBottom: '1px solid rgba(255,255,255,0.4)' }} />
+
+                        <div style={{ borderRight: '1px solid rgba(255,255,255,0.4)' }} />
+                        <div style={{ borderRight: '1px solid rgba(255,255,255,0.4)' }} />
+                        <div />
+                    </div>
+                )}
+
+                {/* Ghost Overly */}
                 {hasGhost && (
                     <img
                         src={beforeImageUrl}
@@ -291,85 +347,135 @@ export default function CameraOverlay({
                             height: '100%',
                             objectFit: 'cover',
                             opacity,
-                            pointerEvents: 'none'
+                            pointerEvents: 'none',
                         }}
                     />
                 )}
+
+                {/* Center Label (Improved) */}
+                <div
+                    style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        background: 'rgba(0,0,0,0.4)',
+                        color: '#f59e0b',
+                        padding: '12px 28px',
+                        borderRadius: '40px',
+                        fontSize: '20px',
+                        fontWeight: 'bold',
+                        backdropFilter: 'blur(4px)',
+                        border: '2px solid #f59e0b',
+                        zIndex: 20,
+                        boxShadow: '0 4px 15px rgba(0,0,0,0.6)',
+                        pointerEvents: 'none',
+                        textAlign: 'center'
+                    }}
+                >
+                    {type === 'BEFORE' ? 'BEFORE 촬영' : 'AFTER 촬영'}
+                </div>
             </div>
 
-            {/* 2. Top Bar */}
+            {/* 2. Top Bar (Overlay) */}
             <div
                 style={{
                     position: 'absolute',
                     top: 0,
                     left: 0,
                     right: 0,
-                    padding: '16px 20px',
-                    paddingTop: 'max(16px, env(safe-area-inset-top))',
+                    padding: '8px 12px',
+                    paddingTop: 'max(12px, env(safe-area-inset-top))',
                     display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    background: 'linear-gradient(to bottom, rgba(0,0,0,0.6), transparent)',
-                    zIndex: 20
+                    alignItems: 'flex-start',
+                    justifyContent: 'space-between',
+                    background: 'linear-gradient(to bottom, rgba(0,0,0,0.8), transparent)',
+                    zIndex: 100
                 }}
             >
-                {/* Timestamp Toggle Button (Left) */}
-                <button
-                    onClick={() => setUseTimestamp(!useTimestamp)}
-                    style={{
-                        position: 'absolute',
-                        left: 20,
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        background: useTimestamp ? 'rgba(59, 130, 246, 0.8)' : 'rgba(0,0,0,0.3)',
-                        color: '#fff',
-                        padding: '6px 12px',
-                        borderRadius: 20,
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        border: '1px solid rgba(255,255,255,0.2)'
-                    }}
-                >
-                    {useTimestamp ? '🕒 ON' : '🕒 OFF'}
-                </button>
-
-                <div
-                    style={{
-                        background: 'rgba(0,0,0,0.5)',
-                        color: '#fff',
-                        padding: '6px 16px',
-                        borderRadius: 20,
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        backdropFilter: 'blur(4px)'
-                    }}
-                >
-                    {type === 'BEFORE' ? 'BEFORE 촬영' : 'AFTER 촬영'}
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', flex: 1, marginRight: 8 }}>
+                    <button
+                        onClick={() => setUseTimestamp(!useTimestamp)}
+                        style={{
+                            background: 'rgba(0,0,0,0.6)',
+                            color: '#fff',
+                            padding: '6px 12px',
+                            borderRadius: 20,
+                            fontSize: '13px',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            flexShrink: 0
+                        }}
+                    >
+                        <span>🕒</span> {useTimestamp ? 'ON' : 'OFF'}
+                    </button>
+ 
+                    <button
+                        onClick={() => setUseGrid(!useGrid)}
+                        style={{
+                            background: useGrid ? '#3b82f6' : 'rgba(0,0,0,0.6)',
+                            color: '#fff',
+                            padding: '6px 12px',
+                            borderRadius: 20,
+                            fontSize: '13px',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            flexShrink: 0
+                        }}
+                    >
+                        <span>▦</span> 그리드
+                    </button>
+ 
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setPreset(prev => {
+                                if (prev === 'FAST_1024') return 'HQ_1600';
+                                if (prev === 'HQ_1600') return 'MAX_1920';
+                                return 'FAST_1024';
+                            });
+                        }}
+                        style={{
+                            background: 'rgba(0,0,0,0.6)',
+                            color: '#fff',
+                            padding: '6px 12px',
+                            borderRadius: 20,
+                            fontSize: '13px',
+                            fontWeight: 700,
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            flexShrink: 0,
+                            whiteSpace: 'nowrap'
+                        }}
+                    >
+                        {preset === 'FAST_1024' && '1024 (저)'}
+                        {preset === 'HQ_1600' && '1600 (중(고))'}
+                        {preset === 'MAX_1920' && '1920 (초고)'}
+                    </button>
                 </div>
-
+ 
                 <button
                     onClick={handleClose}
                     style={{
-                        position: 'absolute',
-                        right: 20,
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        width: 40,
-                        height: 40,
-                        borderRadius: '50%',
-                        background: 'rgba(0,0,0,0.3)',
+                        background: 'rgba(0,0,0,0.6)',
                         color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        borderRadius: '50%',
+                        width: 36,
+                        height: 36,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '24px',
-                        lineHeight: 1
+                        fontSize: 20,
+                        flexShrink: 0
                     }}
                 >
-                    &times;
+                    ✕
                 </button>
             </div>
 
@@ -382,7 +488,7 @@ export default function CameraOverlay({
                     right: 0,
                     padding: '24px 32px',
                     paddingBottom: 'max(32px, env(safe-area-inset-bottom))',
-                    background: 'linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%)',
+                    background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)',
                     zIndex: 20,
                     display: 'flex',
                     flexDirection: 'column',
@@ -390,7 +496,6 @@ export default function CameraOverlay({
                     gap: 20
                 }}
             >
-                {/* Opacity Slider (Only for Ghost) */}
                 {hasGhost && (
                     <div style={{ width: '100%', maxWidth: 300, display: 'flex', alignItems: 'center', gap: 12 }}>
                         <span style={{ color: '#fff', fontSize: 12, opacity: 0.8 }}>0%</span>
@@ -401,14 +506,13 @@ export default function CameraOverlay({
                             step={0.01}
                             value={opacity}
                             onChange={(e) => setOpacity(Number(e.target.value))}
-                            style={{ flex: 1, accentColor: '#3857F5' }}
+                            style={{ flex: 1, accentColor: '#3b82f6' }}
                         />
                         <span style={{ color: '#fff', fontSize: 12, opacity: 0.8 }}>100%</span>
                     </div>
                 )}
 
                 <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    {/* Left: Gallery Picker */}
                     <div style={{ width: 60, display: 'flex', justifyContent: 'center' }}>
                         <button
                             onClick={openPicker}
@@ -433,7 +537,6 @@ export default function CameraOverlay({
                         </button>
                     </div>
 
-                    {/* Center: Shutter Button */}
                     <button
                         onClick={takePhoto}
                         disabled={!isVideoReady || isBusy}
@@ -454,17 +557,14 @@ export default function CameraOverlay({
                                 width: 60,
                                 height: 60,
                                 borderRadius: '50%',
-                                background: '#fff',
-                                transition: 'transform 0.1s'
+                                background: '#fff'
                             }}
                         />
                     </button>
 
-                    {/* Right: Spacer for balance */}
                     <div style={{ width: 60 }} />
                 </div>
 
-                {/* Hidden Input */}
                 <input
                     ref={fileInputRef}
                     type="file"
@@ -474,21 +574,9 @@ export default function CameraOverlay({
                 />
             </div>
 
-            {/* Busy Indicator */}
             {isBusy && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        inset: 0,
-                        background: 'rgba(0,0,0,0.5)',
-                        zIndex: 50,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#fff'
-                    }}
-                >
-                    저장 중...
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+                    처리 중...
                 </div>
             )}
         </div>

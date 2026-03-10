@@ -4,15 +4,17 @@
 
 _레이아웃 및 재사용 컴포넌트 / 현장 작업자용 UI 컴포넌트 / 관리자용 UI 컴포넌트 / 기타 React 컴포넌트_
 
-총 3개 파일
+총 5개 파일
 
 ---
 
 ## 📋 파일 목록
 
 - src/components/admin/NotificationPanel.tsx
+- src/components/admin/ReportTemplate.tsx
 - src/components/AppLayout.tsx
 - src/components/worker/CameraOverlay.tsx
+- src/components/worker/DrawingCanvas.tsx
 
 ---
 
@@ -103,115 +105,233 @@ export default NotificationPanel;
 ---
 
 
+## src/components/admin/ReportTemplate.tsx
+
+```typescript
+import React, { forwardRef } from 'react';
+import { Job, Section, Photo } from '../../lib/db';
+
+type Props = {
+    job: Job;
+    sections: Section[];
+    photosBySection: Record<string, Photo[]>;
+};
+
+const ReportTemplate = forwardRef<HTMLDivElement, Props>(({ job, sections, photosBySection }, ref) => {
+    // A4 Width: 210mm (~794px at 96dpi), Height: 297mm (~1123px)
+    // We'll use a fixed width container for consistent rendering
+    return (
+        <div
+            ref={ref}
+            style={{
+                width: '794px',
+                padding: '40px',
+                background: '#fff',
+                color: '#000',
+                position: 'absolute',
+                left: '-9999px',
+                top: 0
+            }}
+        >
+            {/* Header */}
+            <div style={{ borderBottom: '2px solid #333', paddingBottom: '20px', marginBottom: '30px' }}>
+                <h1 style={{ fontSize: '28px', fontWeight: 'bold', margin: '0 0 10px 0' }}>현장 작업 보고서</h1>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#555' }}>
+                    <div>
+                        <strong>현장명:</strong> {job.siteTitle}
+                    </div>
+                    <div>
+                        <strong>작업일:</strong> {typeof job.date === 'string' ? job.date : (job.date as any)?.toDate?.().toLocaleDateString()}
+                    </div>
+                </div>
+            </div>
+
+            {/* Content */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+                {sections.map((section) => {
+                    const photos = photosBySection[section.id] || [];
+                    const beforePhotos = photos.filter(p => p.type === 'BEFORE');
+                    const afterPhotos = photos.filter(p => p.type === 'AFTER');
+
+                    // Pair photos logic: Match BEFORE index with AFTER index
+                    const maxCount = Math.max(beforePhotos.length, afterPhotos.length);
+                    const rows = Array.from({ length: maxCount }).map((_, i) => ({
+                        before: beforePhotos[i],
+                        after: afterPhotos[i]
+                    }));
+
+                    if (rows.length === 0) return null;
+
+                    return (
+                        <div key={section.id} style={{ breakInside: 'avoid' }}>
+                            <h2 style={{
+                                fontSize: '18px',
+                                fontWeight: 'bold',
+                                borderLeft: '4px solid #3b82f6',
+                                paddingLeft: '10px',
+                                marginBottom: '15px',
+                                background: '#f0f9ff',
+                                padding: '8px 12px'
+                            }}>
+                                {section.title}
+                            </h2>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                                {rows.map((row, idx) => (
+                                    <div key={idx} style={{ display: 'flex', gap: '15px' }}>
+                                        {/* BEFORE */}
+                                        <div style={{ flex: 1, border: '1px solid #ddd', borderRadius: '4px', overflow: 'hidden' }}>
+                                            <div style={{
+                                                background: '#f97316',
+                                                color: '#fff',
+                                                fontSize: '11px',
+                                                fontWeight: 'bold',
+                                                padding: '4px 8px',
+                                                textAlign: 'center'
+                                            }}>
+                                                BEFORE
+                                            </div>
+                                            <div style={{ width: '100%', height: '240px', background: '#eee' }}>
+                                                {row.before ? (
+                                                    <img
+                                                        src={row.before.downloadUrl}
+                                                        alt="Before"
+                                                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                                        crossOrigin="anonymous"
+                                                    />
+                                                ) : (
+                                                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: '12px' }}>
+                                                        (사진 없음)
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* AFTER */}
+                                        <div style={{ flex: 1, border: '1px solid #ddd', borderRadius: '4px', overflow: 'hidden' }}>
+                                            <div style={{
+                                                background: '#3b82f6',
+                                                color: '#fff',
+                                                fontSize: '11px',
+                                                fontWeight: 'bold',
+                                                padding: '4px 8px',
+                                                textAlign: 'center'
+                                            }}>
+                                                AFTER
+                                            </div>
+                                            <div style={{ width: '100%', height: '240px', background: '#eee' }}>
+                                                {row.after ? (
+                                                    <img
+                                                        src={row.after.downloadUrl}
+                                                        alt="After"
+                                                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                                        crossOrigin="anonymous"
+                                                    />
+                                                ) : (
+                                                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: '12px' }}>
+                                                        (사진 없음)
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Footer */}
+            <div style={{ marginTop: '50px', borderTop: '1px solid #ddd', paddingTop: '20px', textAlign: 'center', fontSize: '12px', color: '#888' }}>
+                HellaCompany Field Log System
+            </div>
+        </div>
+    );
+});
+
+export default ReportTemplate;
+
+```
+
+---
+
+
 ## src/components/AppLayout.tsx
 
 ```typescript
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../app/AuthContext';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import NotificationPanel from './admin/NotificationPanel';
+import { LogOut, Home, Bell } from 'lucide-react';
 
 interface AppLayoutProps {
     children: React.ReactNode;
 }
 
 const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
-    const { user, profile, logout } = useAuth();
-    const [unreadCount, setUnreadCount] = useState(0);
-    const [showNotifications, setShowNotifications] = useState(false);
+    const { user, signOut } = useAuth();
+    const navigate = useNavigate();
+    const location = useLocation();
 
-    useEffect(() => {
-        if (profile?.role !== 'ADMIN') {
-            setUnreadCount(0);
-            return;
-        }
-
-        const q = query(
-            collection(db, 'admin_notifications'),
-            where('readAt', '==', null)
-        );
-
-        const unsub = onSnapshot(q, (snap) => {
-            setUnreadCount(snap.size);
-        });
-
-        return () => unsub();
-    }, [profile]);
+    const isAdmin = location.pathname.startsWith('/admin');
+    const isWorker = location.pathname.startsWith('/worker');
 
     return (
-        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--hc-bg)' }}>
+            {/* 전역 헤더 */}
             <header style={{
-                height: '60px',
-                borderBottom: '1px solid var(--hc-border)',
-                display: 'flex',
-                alignItems: 'center',
-                position: 'sticky',
-                top: 0,
-                backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                backdropFilter: 'blur(8px)',
-                zIndex: 1000
+                position: 'sticky', top: 0, zIndex: 1000,
+                backgroundColor: '#fff', borderBottom: '1px solid var(--hc-border)',
+                padding: '0 var(--spacing-md)', height: '60px',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between'
             }}>
-                <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                    <h1 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--hc-text)' }}>
-                        HellaCompany Log
-                    </h1>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>
-                        {profile?.role === 'ADMIN' && (
-                            <div style={{ position: 'relative', cursor: 'pointer' }} onClick={() => setShowNotifications(!showNotifications)}>
-                                <span style={{ fontSize: '20px' }}>🔔</span>
-                                {unreadCount > 0 && (
-                                    <span style={{
-                                        position: 'absolute', top: '-5px', right: '-5px',
-                                        backgroundColor: '#ff4d4f', color: '#fff', fontSize: '10px',
-                                        borderRadius: '10px', padding: '2px 5px', fontWeight: 700
-                                    }}>
-                                        {unreadCount}
-                                    </span>
-                                )}
-                            </div>
-                        )}
-                        {user && (
-                            <button
-                                onClick={() => logout()}
-                                style={{ background: 'none', border: '1px solid var(--hc-border)', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}
-                            >
-                                로그아웃
-                            </button>
-                        )}
+                <div
+                    onClick={() => navigate(isAdmin ? '/admin/jobs' : isWorker ? '/worker/jobs' : '/')}
+                    style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                    <div style={{ backgroundColor: 'var(--hc-primary)', padding: '4px', borderRadius: '4px' }}>
+                        <Home size={18} color="#fff" />
                     </div>
+                    <h1 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--hc-primary)', letterSpacing: '-0.5px' }}>
+                        HELLA FIELD
+                    </h1>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    {isAdmin && (
+                        <button
+                            onClick={() => navigate('/admin/notifications')}
+                            style={{ position: 'relative', padding: '8px' }}
+                        >
+                            <Bell size={20} color="var(--hc-muted)" />
+                        </button>
+                    )}
+                    {user && (
+                        <button
+                            onClick={() => signOut()}
+                            style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--hc-danger)', fontWeight: 600 }}
+                        >
+                            <LogOut size={16} />
+                            로그아웃
+                        </button>
+                    )}
                 </div>
             </header>
 
-            {showNotifications && (
-                <NotificationPanel onClose={() => setShowNotifications(false)} />
-            )}
-
-            <main style={{ flex: 1, padding: 'var(--spacing-lg) 0' }}>
-                <div className="container">
-                    {children}
-                </div>
+            {/* 메인 콘텐츠 영역 (푸터 패딩 확보: 80px) */}
+            <main style={{ flex: 1, padding: 'var(--spacing-md)', paddingBottom: '100px' }}>
+                {children}
             </main>
 
+            {/* 전역 푸터 (P1: 개발자 정보) */}
             <footer style={{
-                padding: 'var(--spacing-lg) 0',
-                borderTop: '1px solid var(--hc-border)',
-                backgroundColor: 'var(--hc-surface)',
-                marginTop: 'auto'
+                backgroundColor: '#fff', borderTop: '1px solid var(--hc-border)',
+                padding: '24px var(--spacing-md)', textAlign: 'center',
+                fontSize: '11px', color: 'var(--hc-muted)', lineHeight: '1.6'
             }}>
-                <div className="container" style={{
-                    textAlign: 'center',
-                    fontSize: '12px',
-                    color: 'var(--hc-muted)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '4px'
-                }}>
-                    <p>개발사: KS컴퍼니</p>
-                    <p>개발자: 배종수</p>
-                    <p>문의: suhachi@gmail.com</p>
-                </div>
+                <p>개발사 KS컴퍼니 | 개발자 배종수 | 문의 suhachi@gmail.com</p>
+                <p style={{ marginTop: '4px', opacity: 0.7 }}>© 2026 HellaCompany. All rights reserved.</p>
             </footer>
         </div>
     );
@@ -227,266 +347,717 @@ export default AppLayout;
 ## src/components/worker/CameraOverlay.tsx
 
 ```typescript
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import DrawingCanvas from './DrawingCanvas';
 
-interface CameraOverlayProps {
-    beforePhotoUrl?: string; // 오버레이용 비포 사진 URL
-    onCapture: (file: File) => void;
+const PENDING_KEY = 'hc_pending_capture_v1';
+
+type CaptureType = 'BEFORE' | 'AFTER';
+
+type Props = {
+    jobId: string;
+    sectionId: string;
+    type: CaptureType;
+    beforeImageUrl?: string;
+    onCaptured: (file: File) => Promise<void> | void;
     onClose: () => void;
-}
+};
 
-const CameraOverlay: React.FC<CameraOverlayProps> = ({ beforePhotoUrl, onCapture, onClose }) => {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [stream, setStream] = useState<MediaStream | null>(null);
-    const [opacity, setOpacity] = useState(0.5);
-    const [showGrid, setShowGrid] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [cameraStatus, setCameraStatus] = useState<'requesting' | 'ready' | 'failed'>('requesting');
+export default function CameraOverlay({
+    jobId,
+    sectionId,
+    type,
+    beforeImageUrl,
+    onCaptured,
+    onClose
+}: Props) {
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-    // 카메라 스트림 시작
+    const [isVideoReady, setIsVideoReady] = useState(false);
+    const [opacity, setOpacity] = useState(0.35);
+    const [isBusy, setIsBusy] = useState(false);
+
+    // Feature: Timestamp
+    const [useTimestamp, setUseTimestamp] = useState(true);
+
+    // Feature: Review & Drawing
+    const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
+    const [capturedUrl, setCapturedUrl] = useState<string | null>(null);
+    const [isDrawingMode, setIsDrawingMode] = useState(false);
+
+    const hasGhost = type === 'AFTER' && !!beforeImageUrl;
+
+    const markerPayload = useMemo(
+        () => ({ jobId, sectionId, type, openedAt: Date.now() }),
+        [jobId, sectionId, type]
+    );
+
+    const savePendingMarker = () => {
+        try {
+            localStorage.setItem(PENDING_KEY, JSON.stringify(markerPayload));
+        } catch {
+            // ignore
+        }
+    };
+
+    const clearPendingMarker = () => {
+        try {
+            localStorage.removeItem(PENDING_KEY);
+        } catch {
+            // ignore
+        }
+    };
+
     useEffect(() => {
-        let activeStream: MediaStream | null = null;
-
-        const startCamera = async () => {
-            setCameraStatus('requesting');
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                setError("이 브라우저는 카메라를 지원하지 않습니다.");
-                setCameraStatus('failed');
-                return;
-            }
-
+        const start = async () => {
             try {
-                // 1. 후면 카메라 우선 시도 (ideal constraints)
-                const mediaStream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: 'environment',
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 }
-                    },
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: 'environment' } },
                     audio: false
                 });
-                activeStream = mediaStream;
-                setStream(mediaStream);
-                if (videoRef.current) {
-                    videoRef.current.srcObject = mediaStream;
+                streamRef.current = stream;
+
+                const video = videoRef.current;
+                if (video) {
+                    video.srcObject = stream;
+                    await video.play();
                 }
-            } catch (err: any) {
-                console.warn("Environment camera failed, trying fallback:", err);
-                try {
-                    // 2. 실패 시 아무 카메라나 요청
-                    const fallbackStream = await navigator.mediaDevices.getUserMedia({
-                        video: true,
-                        audio: false
-                    });
-                    activeStream = fallbackStream;
-                    setStream(fallbackStream);
-                    if (videoRef.current) {
-                        videoRef.current.srcObject = fallbackStream;
-                    }
-                } catch (fallbackErr) {
-                    console.error("Camera access failed:", fallbackErr);
-                    setError("카메라 접근 권한이 없거나 오류가 발생했습니다.");
-                    setCameraStatus('failed');
-                }
+            } catch (e) {
+                console.warn('getUserMedia failed:', e);
             }
         };
 
-        startCamera();
+        void start();
 
-        // Cleanup
         return () => {
-            if (activeStream) {
-                activeStream.getTracks().forEach(track => track.stop());
+            try {
+                streamRef.current?.getTracks().forEach((t) => t.stop());
+            } catch {
+                // ignore
             }
+            streamRef.current = null;
         };
     }, []);
 
-    // 비디오 메타데이터 로드 완료 체크 (Video Ready Gate)
-    const handleVideoLoaded = () => {
-        if (videoRef.current && videoRef.current.videoWidth > 0) {
-            setCameraStatus('ready');
+    const handleLoadedMetadata = () => {
+        const v = videoRef.current;
+        if (!v) return;
+        if (v.videoWidth > 0 && v.videoHeight > 0) {
+            setIsVideoReady(true);
         }
     };
 
-    const handleCapture = useCallback(() => {
-        if (!videoRef.current || !canvasRef.current || cameraStatus !== 'ready') return;
-
+    const takePhoto = async () => {
         const video = videoRef.current;
-        const canvas = canvasRef.current;
-        const context = canvas.getContext('2d');
+        if (!video) return;
 
-        if (!context) return;
+        savePendingMarker();
+        setIsBusy(true);
+        try {
+            const w = video.videoWidth;
+            const h = video.videoHeight;
+            if (!w || !h) return;
 
-        // 캔버스 크기를 비디오 해상도에 맞춤
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
 
-        // 현재 비디오 프레임 그리기
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            ctx.drawImage(video, 0, 0, w, h);
 
-        // Blob 변환 및 파일 생성
-        canvas.toBlob((blob) => {
-            if (blob) {
-                const file = new File([blob], `capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
-                onCapture(file);
-                // 중요: 스트림 정지 (선택 사항, 상위 컴포넌트 정책에 따름)
+            // --- Apply Timestamp if enabled ---
+            if (useTimestamp) {
+                const now = new Date();
+                const dateStr = now.toLocaleDateString('ko-KR', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                });
+                const timeStr = now.toLocaleTimeString('ko-KR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                });
+                const fullText = `${dateStr} ${timeStr}`;
+
+                // Calculate font size (approx 3% of height, min 24px)
+                const fontSize = Math.max(24, Math.floor(h * 0.03));
+                const margin = Math.floor(h * 0.02);
+
+                ctx.font = `bold ${fontSize}px sans-serif`;
+                ctx.fillStyle = 'white';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = Math.max(2, fontSize / 15);
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'bottom';
+
+                // Shadow for better visibility
+                ctx.shadowColor = 'rgba(0,0,0,0.5)';
+                ctx.shadowBlur = 4;
+                ctx.shadowOffsetX = 2;
+                ctx.shadowOffsetY = 2;
+
+                ctx.strokeText(fullText, w - margin, h - margin);
+                ctx.fillText(fullText, w - margin, h - margin);
             }
-        }, 'image/jpeg', 0.9); // 품질 0.9
-    }, [onCapture, cameraStatus]);
+            // ----------------------------------
 
-    // 파일 선택 핸들러 (Fallback)
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            // Fallback 발생 시 상태 보존 마커 저장 (필요 시 context에서 주입받아야 하나, 여기서는 심플하게)
-            // 실제 구현에서는 상위에서 처리하거나 여기서 localStorage에 마커를 남깁니다.
-            // STEP 3-4 요구사항: "네이티브 선택창 열기 전에 localStorage에 pending 마커 저장"
-            // 하지만 input click 직전을 잡기가 어려우므로, 상위 컴포넌트에서 handleUploadClick 시점에 저장하는 것이 더 정확하지만
-            // 여기서는 심플하게 캡처 콜백이 불리기 전에 마커를 저장하는 것은 의미가 적으므로(이미 파일 선택 후임),
-            // "복귀 시 상태 복원"은 상위 컴포넌트(WorkerJobDetailPage)의 useEffect에서 처리합니다.
-            onCapture(file);
+            const blob: Blob | null = await new Promise((resolve) =>
+                canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92)
+            );
+            if (!blob) return;
+
+            // Instead of auto-saving, go to Review Mode
+            const url = URL.createObjectURL(blob);
+            setCapturedBlob(blob);
+            setCapturedUrl(url);
+
+        } finally {
+            setIsBusy(false);
         }
     };
 
-    return (
-        <div style={{
-            position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-            backgroundColor: '#000', zIndex: 3000, display: 'flex', flexDirection: 'column'
-        }}>
-            {/* 상단 닫기 버튼 영역 */}
-            <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 20 }}>
-                <button onClick={onClose} style={{ color: '#fff', background: 'rgba(0,0,0,0.5)', border: 'none', padding: '8px 12px', borderRadius: '4px', fontSize: '14px' }}>
-                    ✕ 닫기
-                </button>
+    const handleConfirmSave = async (blobToSave: Blob) => {
+        setIsBusy(true);
+        try {
+            const file = new File([blobToSave], `capture_${type.toLowerCase()}.jpg`, { type: 'image/jpeg' });
+            await onCaptured(file);
+            clearPendingMarker();
+            onClose();
+        } finally {
+            setIsBusy(false);
+        }
+    };
+
+    const handleRetake = () => {
+        if (capturedUrl) URL.revokeObjectURL(capturedUrl);
+        setCapturedUrl(null);
+        setCapturedBlob(null);
+    };
+
+    const openPicker = () => {
+        savePendingMarker();
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // For file upload, we can also offer review/draw, OR just upload directly.
+        // Let's go to review mode to allow drawing on uploaded files too!
+        setIsBusy(true);
+        try {
+            const blob = file.slice(0, file.size, file.type);
+            const url = URL.createObjectURL(blob);
+            setCapturedBlob(blob);
+            setCapturedUrl(url);
+        } finally {
+            setIsBusy(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const handleClose = () => {
+        clearPendingMarker();
+        onClose();
+    };
+
+    // --- Render: Drawing Mode ---
+    if (isDrawingMode && capturedUrl) {
+        return (
+            <DrawingCanvas
+                imageUrl={capturedUrl}
+                onSave={(file) => handleConfirmSave(file)}
+                onCancel={() => setIsDrawingMode(false)}
+            />
+        );
+    }
+
+    // --- Render: Review Mode ---
+    if (capturedUrl && capturedBlob) {
+        return (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: '#000', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                    <img src={capturedUrl} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                </div>
+
+                <div style={{ padding: 24, background: '#111', display: 'flex', gap: 16 }}>
+                    <button onClick={handleRetake} style={{ flex: 1, padding: '16px', background: '#374151', color: '#fff', borderRadius: 8 }}>
+                        재촬영
+                    </button>
+                    <button onClick={() => setIsDrawingMode(true)} style={{ flex: 1, padding: '16px', background: '#3b82f6', color: '#fff', borderRadius: 8 }}>
+                        🖊️ 그리기
+                    </button>
+                    <button onClick={() => handleConfirmSave(capturedBlob)} style={{ flex: 1, padding: '16px', background: '#2563eb', color: '#fff', borderRadius: 8, fontWeight: 'bold' }}>
+                        저장
+                    </button>
+                </div>
+                {isBusy && <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>저장 중...</div>}
             </div>
+        );
+    }
 
-            {/* 메인 뷰 영역 */}
-            <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
+    // --- Render: Camera Mode ---
+    return (
+        <div
+            style={{
+                position: 'fixed',
+                inset: 0,
+                background: '#000',
+                zIndex: 3000,
+                display: 'flex',
+                flexDirection: 'column'
+            }}
+        >
+            {/* 1. Video Layer (Full Screen) */}
+            <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
+                <video
+                    ref={videoRef}
+                    onLoadedMetadata={handleLoadedMetadata}
+                    playsInline
+                    muted
+                    style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        display: 'block'
+                    }}
+                />
 
-                {/* 1. 라이브 카메라 피드 */}
-                {!error ? (
-                    <video
-                        ref={videoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        onLoadedMetadata={handleVideoLoaded}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                ) : (
-                    <div style={{ color: '#fff', textAlign: 'center', padding: '20px' }}>
-                        <p style={{ marginBottom: '10px' }}>⚠️ {error}</p>
-                        <p style={{ fontSize: '12px', color: '#ccc' }}>아래 '파일 선택' 버튼을 이용해주세요.</p>
-                    </div>
-                )}
-
-                {/* 상태 인디케이터 */}
-                {cameraStatus === 'requesting' && !error && (
-                    <div style={{ position: 'absolute', color: 'white', zIndex: 50 }}>카메라 연결 중...</div>
-                )}
-
-                {/* 2. 캔버스 (캡처용, 숨김) */}
-                <canvas ref={canvasRef} style={{ display: 'none' }} />
-
-                {/* 3. 그리드 오버레이 */}
-                {showGrid && !error && (
-                    <div style={{
-                        position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-                        display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gridTemplateRows: '1fr 1fr 1fr',
-                        pointerEvents: 'none', zIndex: 10
-                    }}>
-                        {[...Array(9)].map((_, i) => (
-                            <div key={i} style={{ border: '0.5px solid rgba(255,255,255,0.3)' }} />
-                        ))}
-                    </div>
-                )}
-
-                {/* 4. 고스트 이미지 오버레이 (비포 사진) */}
-                {beforePhotoUrl && !error && (
+                {hasGhost && (
                     <img
-                        src={beforePhotoUrl}
-                        alt="Ghost Overlay"
+                        src={beforeImageUrl}
+                        alt="ghost"
                         style={{
-                            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-                            objectFit: 'cover', opacity: opacity, pointerEvents: 'none', zIndex: 15
+                            position: 'absolute',
+                            inset: 0,
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            opacity,
+                            pointerEvents: 'none'
                         }}
                     />
                 )}
             </div>
 
-            {/* 하단 컨트롤 바 */}
-            <div style={{
-                padding: '20px', backgroundColor: 'rgba(0,0,0,0.8)',
-                display: 'flex', flexDirection: 'column', gap: '15px'
-            }}>
-                {/* 투명도 슬라이더 */}
-                {beforePhotoUrl && !error && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ color: '#fff', fontSize: '12px', minWidth: '50px' }}>투명도</span>
+            {/* 2. Top Bar */}
+            <div
+                style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    padding: '16px 20px',
+                    paddingTop: 'max(16px, env(safe-area-inset-top))',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    background: 'linear-gradient(to bottom, rgba(0,0,0,0.6), transparent)',
+                    zIndex: 20
+                }}
+            >
+                {/* Timestamp Toggle Button (Left) */}
+                <button
+                    onClick={() => setUseTimestamp(!useTimestamp)}
+                    style={{
+                        position: 'absolute',
+                        left: 20,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: useTimestamp ? 'rgba(59, 130, 246, 0.8)' : 'rgba(0,0,0,0.3)',
+                        color: '#fff',
+                        padding: '6px 12px',
+                        borderRadius: 20,
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        border: '1px solid rgba(255,255,255,0.2)'
+                    }}
+                >
+                    {useTimestamp ? '🕒 ON' : '🕒 OFF'}
+                </button>
+
+                <div
+                    style={{
+                        background: 'rgba(0,0,0,0.5)',
+                        color: '#fff',
+                        padding: '6px 16px',
+                        borderRadius: 20,
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        backdropFilter: 'blur(4px)'
+                    }}
+                >
+                    {type === 'BEFORE' ? 'BEFORE 촬영' : 'AFTER 촬영'}
+                </div>
+
+                <button
+                    onClick={handleClose}
+                    style={{
+                        position: 'absolute',
+                        right: 20,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        width: 40,
+                        height: 40,
+                        borderRadius: '50%',
+                        background: 'rgba(0,0,0,0.3)',
+                        color: '#fff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '24px',
+                        lineHeight: 1
+                    }}
+                >
+                    &times;
+                </button>
+            </div>
+
+            {/* 3. Bottom Controls */}
+            <div
+                style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    padding: '24px 32px',
+                    paddingBottom: 'max(32px, env(safe-area-inset-bottom))',
+                    background: 'linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%)',
+                    zIndex: 20,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 20
+                }}
+            >
+                {/* Opacity Slider (Only for Ghost) */}
+                {hasGhost && (
+                    <div style={{ width: '100%', maxWidth: 300, display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span style={{ color: '#fff', fontSize: 12, opacity: 0.8 }}>0%</span>
                         <input
-                            type="range" min="0" max="1" step="0.1"
+                            type="range"
+                            min={0}
+                            max={1}
+                            step={0.01}
                             value={opacity}
-                            onChange={(e) => setOpacity(parseFloat(e.target.value))}
-                            style={{ flex: 1 }}
+                            onChange={(e) => setOpacity(Number(e.target.value))}
+                            style={{ flex: 1, accentColor: '#3857F5' }}
                         />
+                        <span style={{ color: '#fff', fontSize: 12, opacity: 0.8 }}>100%</span>
                     </div>
                 )}
 
-                {/* 버튼 그룹 */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-
-                    {/* 그리드 토글 */}
-                    <button
-                        onClick={() => setShowGrid(!showGrid)}
-                        disabled={!!error}
-                        style={{
-                            color: '#fff', background: 'none', border: '1px solid #fff',
-                            padding: '8px 12px', borderRadius: '4px', fontSize: '12px', opacity: error ? 0.3 : 1
-                        }}>
-                        {showGrid ? '그리드 OFF' : '그리드 ON'}
-                    </button>
-
-                    {/* 촬영 버튼 (메인) */}
-                    {!error ? (
+                <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    {/* Left: Gallery Picker */}
+                    <div style={{ width: 60, display: 'flex', justifyContent: 'center' }}>
                         <button
-                            onClick={handleCapture}
-                            disabled={cameraStatus !== 'ready'}
-                            className="btn-primary"
+                            onClick={openPicker}
+                            disabled={isBusy}
                             style={{
-                                width: '70px', height: '70px', borderRadius: '50%',
-                                border: `4px solid ${cameraStatus === 'ready' ? '#fff' : '#666'}`,
-                                backgroundColor: 'transparent',
-                                display: 'flex', justifyContent: 'center', alignItems: 'center',
-                                opacity: cameraStatus === 'ready' ? 1 : 0.5,
-                                cursor: cameraStatus === 'ready' ? 'pointer' : 'not-allowed'
+                                width: 44,
+                                height: 44,
+                                borderRadius: 8,
+                                background: 'rgba(255,255,255,0.2)',
+                                border: '1px solid rgba(255,255,255,0.3)',
+                                color: '#fff',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
                             }}
                         >
-                            <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: cameraStatus === 'ready' ? '#fff' : '#ccc' }} />
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                <circle cx="8.5" cy="8.5" r="1.5" />
+                                <polyline points="21 15 16 10 5 21" />
+                            </svg>
                         </button>
-                    ) : (
-                        // 에러 시 파일 선택 Fallback
-                        <label className="btn-primary" style={{ cursor: 'pointer', padding: '12px 24px', borderRadius: '8px' }}>
-                            파일 선택
-                            <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
-                        </label>
-                    )}
+                    </div>
 
-                    {/* 파일 선택 (보조) - 카메라가 되어도 갤러리 선택용으로 유지 */}
-                    {!error && (
-                        <label style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', color: '#fff' }}>
-                            <span style={{ fontSize: '24px' }}>🖼️</span>
-                            <span style={{ fontSize: '10px' }}>갤러리</span>
-                            <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
-                        </label>
-                    )}
+                    {/* Center: Shutter Button */}
+                    <button
+                        onClick={takePhoto}
+                        disabled={!isVideoReady || isBusy}
+                        style={{
+                            width: 72,
+                            height: 72,
+                            borderRadius: '50%',
+                            background: 'transparent',
+                            border: '4px solid #fff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: 0
+                        }}
+                    >
+                        <div
+                            style={{
+                                width: 60,
+                                height: 60,
+                                borderRadius: '50%',
+                                background: '#fff',
+                                transition: 'transform 0.1s'
+                            }}
+                        />
+                    </button>
+
+                    {/* Right: Spacer for balance */}
+                    <div style={{ width: 60 }} />
                 </div>
+
+                {/* Hidden Input */}
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={handleFileChange}
+                />
+            </div>
+
+            {/* Busy Indicator */}
+            {isBusy && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        inset: 0,
+                        background: 'rgba(0,0,0,0.5)',
+                        zIndex: 50,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#fff'
+                    }}
+                >
+                    저장 중...
+                </div>
+            )}
+        </div>
+    );
+}
+
+```
+
+---
+
+
+## src/components/worker/DrawingCanvas.tsx
+
+```typescript
+import React, { useEffect, useRef, useState } from 'react';
+
+type Props = {
+    imageUrl: string;
+    onSave: (file: File) => void;
+    onCancel: () => void;
+};
+
+export default function DrawingCanvas({ imageUrl, onSave, onCancel }: Props) {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [isDrawing, setIsDrawing] = useState(false);
+    const [color, setColor] = useState<'#ef4444' | '#ffffff'>('#ef4444'); // Red-500 or White
+    const [lineWidth] = useState(5);
+    const [imageLoaded, setImageLoaded] = useState(false);
+    const imgRef = useRef<HTMLImageElement | null>(null);
+
+    // Initialize canvas with image
+    useEffect(() => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = imageUrl;
+        img.onload = () => {
+            imgRef.current = img;
+            const canvas = canvasRef.current;
+            if (canvas) {
+                // Set canvas size to match image resolution
+                canvas.width = img.width;
+                canvas.height = img.height;
+
+                // Draw image initially
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.drawImage(img, 0, 0);
+                }
+                setImageLoaded(true);
+            }
+        };
+    }, [imageUrl]);
+
+    const getPoint = (e: React.MouseEvent | React.TouchEvent | PointerEvent) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return { x: 0, y: 0 };
+
+        const rect = canvas.getBoundingClientRect();
+        let clientX, clientY;
+
+        if ('touches' in e) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else {
+            clientX = (e as React.MouseEvent).clientX;
+            clientY = (e as React.MouseEvent).clientY;
+        }
+
+        // Map client coords to canvas resolution
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+
+        return {
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
+        };
+    };
+
+    const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+        setIsDrawing(true);
+        const ctx = canvasRef.current?.getContext('2d');
+        if (ctx) {
+            const { x, y } = getPoint(e);
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth * (canvasRef.current!.width / 1000); // Scale line width relative to image size
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+        }
+    };
+
+    const draw = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!isDrawing) return;
+        // Prevent scrolling on touch
+        if (e.cancelable) e.preventDefault();
+
+        const ctx = canvasRef.current?.getContext('2d');
+        if (ctx) {
+            const { x, y } = getPoint(e);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+        }
+    };
+
+    const stopDrawing = () => {
+        setIsDrawing(false);
+        const ctx = canvasRef.current?.getContext('2d');
+        if (ctx) {
+            ctx.closePath();
+        }
+    };
+
+    const handleSave = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        canvas.toBlob((blob) => {
+            if (blob) {
+                const file = new File([blob], "annotated_image.jpg", { type: "image/jpeg" });
+                onSave(file);
+            }
+        }, 'image/jpeg', 0.92);
+    };
+
+    const handleClear = () => {
+        const canvas = canvasRef.current;
+        const img = imgRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (canvas && img && ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+        }
+    };
+
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 3050, background: '#000',
+            display: 'flex', flexDirection: 'column'
+        }}>
+            {/* Toolbar */}
+            <div style={{
+                padding: '16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                background: '#1f2937',
+                color: '#fff'
+            }}>
+                <button onClick={onCancel} style={{ fontSize: '14px' }}>취소</button>
+                <div style={{ fontWeight: 'bold' }}>사진 편집</div>
+                <button onClick={handleSave} style={{ color: '#3b82f6', fontWeight: 'bold' }}>저장</button>
+            </div>
+
+            {/* Canvas Area */}
+            <div style={{
+                flex: 1,
+                position: 'relative',
+                background: '#000',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                touchAction: 'none' // Important for drawing
+            }}>
+                {!imageLoaded && <div style={{ color: '#fff' }}>이미지 로딩 중...</div>}
+                <canvas
+                    ref={canvasRef}
+                    style={{
+                        maxWidth: '100%',
+                        maxHeight: '100%',
+                        objectFit: 'contain',
+                        display: imageLoaded ? 'block' : 'none'
+                    }}
+                    onMouseDown={startDrawing}
+                    onMouseMove={draw}
+                    onMouseUp={stopDrawing}
+                    onMouseOut={stopDrawing}
+                    onTouchStart={startDrawing}
+                    onTouchMove={draw}
+                    onTouchEnd={stopDrawing}
+                />
+            </div>
+
+            {/* Tools */}
+            <div style={{
+                padding: '20px',
+                background: '#1f2937',
+                display: 'flex',
+                justifyContent: 'center',
+                gap: '20px'
+            }}>
+                <button
+                    onClick={() => setColor('#ef4444')}
+                    style={{
+                        width: 40, height: 40, borderRadius: '50%', background: '#ef4444',
+                        border: color === '#ef4444' ? '3px solid #fff' : 'none'
+                    }}
+                />
+                <button
+                    onClick={() => setColor('#ffffff')}
+                    style={{
+                        width: 40, height: 40, borderRadius: '50%', background: '#ffffff',
+                        border: color === '#ffffff' ? '3px solid #3b82f6' : 'none'
+                    }}
+                />
+                <div style={{ width: 1, background: '#4b5563', margin: '0 10px' }} />
+                <button
+                    onClick={handleClear}
+                    style={{
+                        padding: '8px 16px', background: '#374151', color: '#fff',
+                        borderRadius: '8px', fontSize: '14px'
+                    }}
+                >
+                    초기화
+                </button>
             </div>
         </div>
     );
-};
-
-export default CameraOverlay;
+}
 
 ```
 

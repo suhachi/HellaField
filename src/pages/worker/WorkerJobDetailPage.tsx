@@ -36,6 +36,14 @@ export default function WorkerJobDetailPage() {
     const [newSectionTitle, setNewSectionTitle] = useState('');
     const [isCreatingSection, setIsCreatingSection] = useState(false);
 
+    // Upload Progress State
+    const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+
+    // Section Title Editing State
+    const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+    const [editingSectionValue, setEditingSectionValue] = useState<string>('');
+    const [isSavingSection, setIsSavingSection] = useState(false);
+
     const isLocked = job?.status === 'SUBMITTED';
 
     const load = useCallback(async () => {
@@ -111,12 +119,27 @@ export default function WorkerJobDetailPage() {
     const onCaptured = async (file: File) => {
         if (!jobId || !activeSectionId) return;
 
-        await uploadPhoto(file, jobId, activeSectionId, activeType);
+        setUploadProgress(0);
 
-        localStorage.removeItem(PENDING_KEY);
+        try {
+            await uploadPhoto(
+                file,
+                jobId,
+                activeSectionId,
+                activeType,
+                (progress) => setUploadProgress(progress)
+            );
 
-        const updated = await listPhotos(jobId, activeSectionId);
-        setPhotosBySection((prev) => ({ ...prev, [activeSectionId]: updated }));
+            localStorage.removeItem(PENDING_KEY);
+
+            const updated = await listPhotos(jobId, activeSectionId);
+            setPhotosBySection((prev) => ({ ...prev, [activeSectionId]: updated }));
+        } catch (e) {
+            console.error("Upload failed:", e);
+            alert("사진 업로드에 실패했습니다. 다시 시도해 주세요.");
+        } finally {
+            setUploadProgress(null);
+        }
     };
 
     const handleDelete = async (sectionId: string, photo: Photo) => {
@@ -184,6 +207,43 @@ export default function WorkerJobDetailPage() {
         }
     };
 
+    // --- Section Edit Logic ---
+    const handleEditSectionStart = (section: Section) => {
+        setEditingSectionId(section.id);
+        setEditingSectionValue(section.title);
+    };
+
+    const handleEditSectionCancel = () => {
+        setEditingSectionId(null);
+        setEditingSectionValue('');
+    };
+
+    const handleEditSectionSave = async (sectionId: string) => {
+        if (!jobId) return;
+        const trimmed = editingSectionValue.trim();
+        if (!trimmed) {
+            alert("구역 제목을 입력해주세요.");
+            return;
+        }
+
+        setIsSavingSection(true);
+        try {
+            const { updateSection } = await import('../../lib/db');
+            await updateSection(jobId, sectionId, {
+                title: trimmed.substring(0, 60)
+            });
+
+            // Local state update
+            setSections(prev => prev.map(s => s.id === sectionId ? { ...s, title: trimmed.substring(0, 60) } : s));
+            setEditingSectionId(null);
+        } catch (e) {
+            console.error("Failed to update section title:", e);
+            alert("구역 제목 저장에 실패했습니다.");
+        } finally {
+            setIsSavingSection(false);
+        }
+    };
+
     if (!jobId) return <div style={{ padding: 16 }}>잘못된 접근입니다.</div>;
 
     return (
@@ -230,7 +290,60 @@ export default function WorkerJobDetailPage() {
 
                         return (
                             <div key={section.id} style={{ marginBottom: 24, borderBottom: '1px solid #eee', paddingBottom: 24 }}>
-                                <h3 style={{ margin: '12px 0', fontSize: '18px' }}>{section.title}</h3>
+                                {editingSectionId === section.id ? (
+                                    <div style={{ display: 'flex', gap: 8, margin: '12px 0', alignItems: 'center' }}>
+                                        <input
+                                            type="text"
+                                            value={editingSectionValue}
+                                            onChange={(e) => setEditingSectionValue(e.target.value)}
+                                            disabled={isSavingSection}
+                                            maxLength={60}
+                                            style={{
+                                                fontSize: '18px',
+                                                fontWeight: 'bold',
+                                                padding: '6px 10px',
+                                                border: '1px solid #3b82f6',
+                                                borderRadius: 8,
+                                                flex: 1
+                                            }}
+                                            autoFocus
+                                        />
+                                        <button
+                                            onClick={() => handleEditSectionSave(section.id)}
+                                            disabled={isSavingSection}
+                                            style={{ padding: '8px 14px', background: '#3b82f6', color: '#fff', borderRadius: 8, fontWeight: 'bold' }}
+                                        >
+                                            저장
+                                        </button>
+                                        <button
+                                            onClick={handleEditSectionCancel}
+                                            disabled={isSavingSection}
+                                            style={{ padding: '8px 14px', background: '#e2e8f0', borderRadius: 8 }}
+                                        >
+                                            취소
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 0' }}>
+                                        <h3 style={{ margin: 0, fontSize: '18px' }}>{section.title}</h3>
+                                        {!isLocked && (
+                                            <button
+                                                onClick={() => handleEditSectionStart(section)}
+                                                style={{
+                                                    fontSize: 12,
+                                                    padding: '4px 8px',
+                                                    background: '#f8fafc',
+                                                    color: '#64748b',
+                                                    border: '1px solid #e2e8f0',
+                                                    borderRadius: 6,
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                제목 수정
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
 
                                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                                     {/* BEFORE Column */}
@@ -441,6 +554,27 @@ export default function WorkerJobDetailPage() {
                             </div>
                         </form>
                     </div>
+                </div>
+            )}
+
+            {/* Upload Progress Overlay */}
+            {uploadProgress !== null && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 4000,
+                    background: 'rgba(0,0,0,0.7)',
+                    display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center', color: '#fff'
+                }}>
+                    <div style={{ fontSize: 18, marginBottom: 16, fontWeight: 600 }}>사진 업로드 중...</div>
+                    <div style={{ width: 200, height: 8, background: 'rgba(255,255,255,0.2)', borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{
+                            height: '100%',
+                            background: '#3b82f6',
+                            width: `${uploadProgress}%`,
+                            transition: 'width 0.2s'
+                        }} />
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 14 }}>{Math.round(uploadProgress)}%</div>
                 </div>
             )}
         </div>

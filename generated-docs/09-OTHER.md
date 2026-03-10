@@ -67,9 +67,11 @@ VITE_FIREBASE_APP_ID=your_app_id
 
 ```cache
 vite.svg,1770979575136,699a02e0e68a579f687d364bbbe7633161244f35af068220aee37b1b33dfb3c7
-index.html,1771055403024,840841714dd423cbe304e30447287561c1af116c5e8ed3eb34837517d00d1f1e
-assets/index-BQlj8eL0.css,1771055403022,f738fc15fe6ffb9b9ad6bbe5dcdfc2226f150fa0f388565620070246b6f0d6bf
-assets/index-B6THceI7.js,1771055403024,7a1bf9d94ad114738c638259ccd5d3962505917209edd623267bb48d7cd17d37
+index.html,1771497978470,ccc3fe4f1911569a9b8a5ce7a9a499f4e199529f3f4eaa3e6b7b9db2434cdf94
+assets/purify.es-Bzr520pe.js,1771497978470,6ce952e09072ea544ebfdb257d3775ac9a6de76808b87d6fd0de467e24d1d8ad
+assets/index-BQlj8eL0.css,1771497978470,f738fc15fe6ffb9b9ad6bbe5dcdfc2226f150fa0f388565620070246b6f0d6bf
+assets/index.es-CJSM2y_a.js,1771497978470,051d97d044881ac6e13f5a9e2c682e677fcf8e906c665d52b30626e5da3a613f
+assets/index-jj71xrUS.js,1771497978470,e03c4a3c3e221969741b1ff3fbe3285c2d9b2698768e7beaa72675d2030e6ddd
 
 ```
 
@@ -535,6 +537,8 @@ export default defineConfig([
 ])
 ```
 
+# HellaField
+
 ```
 
 ---
@@ -555,8 +559,7 @@ export default defineConfig([
 [
     {
         "origin": [
-            "https://hellacompany.web.app",
-            "http://localhost:5173"
+            "*"
         ],
         "method": [
             "GET",
@@ -566,7 +569,8 @@ export default defineConfig([
         "maxAgeSeconds": 3600,
         "responseHeader": [
             "Content-Type",
-            "Content-Disposition"
+            "Content-Disposition",
+            "Authorization"
         ]
     }
 ]

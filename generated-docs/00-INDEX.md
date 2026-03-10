@@ -1,8 +1,8 @@
 # 프로젝트 전체 문서 - 목차
 
-생성 날짜: 2026. 2. 14. 오후 5:14:49
+생성 날짜: 2026. 2. 20. 오후 8:23:55
 
-총 파일 수: 54
+총 파일 수: 56
 
 ## 01-CONFIG
 
@@ -49,13 +49,15 @@ _사용자 인증 및 보호된 라우트_
 
 ## 04-COMPONENTS
 
-**공통 컴포넌트, 작업자 컴포넌트, 관리자 컴포넌트, 기타 컴포넌트** (3 파일)
+**공통 컴포넌트, 작업자 컴포넌트, 관리자 컴포넌트, 기타 컴포넌트** (5 파일)
 
 _레이아웃 및 재사용 컴포넌트_
 
 - src/components/admin/NotificationPanel.tsx
+- src/components/admin/ReportTemplate.tsx
 - src/components/AppLayout.tsx
 - src/components/worker/CameraOverlay.tsx
+- src/components/worker/DrawingCanvas.tsx
 
 ## 05-PAGES
 
