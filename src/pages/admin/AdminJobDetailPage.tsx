@@ -301,7 +301,11 @@ export default function AdminJobDetailPage() {
                     scale: 2, // Higher resolution
                     useCORS: true, // Allow loading remote images
                     logging: false,
-                    backgroundColor: '#ffffff'
+                    backgroundColor: '#ffffff',
+                    width: 794,
+                    height: 1123,
+                    windowWidth: 794,
+                    windowHeight: 1123
                 });
 
                 const imgData = canvas.toDataURL('image/jpeg', 0.95);

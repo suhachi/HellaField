@@ -1,4 +1,4 @@
-import React, { forwardRef } from 'react';
+import { forwardRef } from 'react';
 import type { Job, Section, Photo } from '../../lib/db';
 
 type Props = {
@@ -15,13 +15,14 @@ type RenderItem =
 
 const PAGE_WIDTH = 794;
 const PAGE_HEIGHT = 1123;
-const PADDING = 40;
+const PADDING = 45; // Increased padding slightly for safety
 const INNER_HEIGHT = PAGE_HEIGHT - (PADDING * 2);
 
+// More conservative height estimates to prevent overflow
 const HEIGHTS = {
-    'header': 120,
-    'section-title': 60,
-    'photo-row': 285,
+    'header': 130, // Extra 10px buffer
+    'section-title': 70, // Extra 10px buffer
+    'photo-row': 310, // Increased from 285px to 310x to handle title and bottom margins
     'footer': 70
 };
 
@@ -29,15 +30,13 @@ const ReportTemplate = forwardRef<HTMLDivElement, Props>(({ job, sections, photo
     const items: RenderItem[] = [{ type: 'header' }];
 
     sections.forEach(section => {
-        items.push({ type: 'section-title', sectionTitle: section.title, sectionId: section.id });
         const photos = photosBySection[section.id] || [];
         const beforePhotos = photos.filter(p => p.type === 'BEFORE');
         const afterPhotos = photos.filter(p => p.type === 'AFTER');
         const count = Math.max(beforePhotos.length, afterPhotos.length);
 
-        if (count === 0) {
-            items.pop(); // Remove the title if no photos
-        } else {
+        if (count > 0) {
+            items.push({ type: 'section-title', sectionTitle: section.title, sectionId: section.id });
             for (let i = 0; i < count; i++) {
                 items.push({ type: 'photo-row', before: beforePhotos[i], after: afterPhotos[i], idx: i });
             }
@@ -50,16 +49,17 @@ const ReportTemplate = forwardRef<HTMLDivElement, Props>(({ job, sections, photo
     let currentPage: RenderItem[] = [];
     let currentHeight = 0;
 
-    items.forEach((item, index) => {
+    items.forEach((item) => {
         const h = HEIGHTS[item.type];
-        let needsNewPage = currentHeight + h > INNER_HEIGHT;
+        
+        // Critical Logic: If a section title is at the very bottom, push it to new page with its first photo
+        let needsNewPage = (currentHeight + h > INNER_HEIGHT);
 
-        if (item.type === 'section-title') {
-            const nextItem = items[index + 1];
-            if (nextItem && nextItem.type === 'photo-row') {
-                if (currentHeight + h + HEIGHTS['photo-row'] > INNER_HEIGHT) {
-                    needsNewPage = true;
-                }
+        if (!needsNewPage && item.type === 'section-title') {
+            const firstPhotoRowHeight = HEIGHTS['photo-row'];
+            // If we can't fit the title AND at least one photo row, start a new page
+            if (currentHeight + h + firstPhotoRowHeight > INNER_HEIGHT) {
+                needsNewPage = true;
             }
         }
 
