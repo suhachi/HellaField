@@ -212,27 +212,48 @@ export const getRetentionConfig = async () => {
 
 export const deleteJobTotal = async (jobId: string) => {
     const sections = await listSections(jobId);
+    const photoDeletionPromises: Promise<any>[] = [];
+
+    // 1. Prepare photo and file deletions
     for (const section of sections) {
         const photosCol = collection(db, 'jobs', jobId, 'sections', section.id, 'photos');
         const photoSnap = await getDocs(photosCol);
+        
         for (const pDoc of photoSnap.docs) {
             const photo = pDoc.data() as Photo;
-            if (!photo.deletedAt) {
-                try {
-                    const fileRef = ref(storage, photo.storagePath);
-                    await deleteObject(fileRef);
-                } catch (error) {
-                    console.warn("Cleanup: Storage file delete failed:", photo.storagePath);
-                }
+            
+            // Storage file deletion promise
+            if (photo.storagePath && !photo.deletedAt) {
+                const fileTask = (async () => {
+                    try {
+                        const fileRef = ref(storage, photo.storagePath);
+                        await deleteObject(fileRef);
+                    } catch (error: any) {
+                        // Silence 404 errors so they don't appear as red errors in console
+                        if (error.code === 'storage/object-not-found') return;
+                        console.warn("Cleanup: Storage file delete failed:", photo.storagePath, error);
+                    }
+                })();
+                photoDeletionPromises.push(fileTask);
             }
-            await deleteDoc(pDoc.ref);
+            // Firestore photo document deletion promise
+            photoDeletionPromises.push(deleteDoc(pDoc.ref));
         }
-        await deleteDoc(doc(db, 'jobs', jobId, 'sections', section.id));
     }
+
+    // Execute all photo/file deletions in parallel for speed
+    await Promise.all(photoDeletionPromises);
+
+    // 2. Delete all sections in parallel
+    const sectionTasks = sections.map(s => deleteDoc(doc(db, 'jobs', jobId, 'sections', s.id)));
+    await Promise.all(sectionTasks);
+
+    // 3. Delete all related notifications in parallel
     const notifQuery = query(collection(db, 'admin_notifications'), where('jobId', '==', jobId));
     const notifSnap = await getDocs(notifQuery);
-    for (const nDoc of notifSnap.docs) {
-        await deleteDoc(nDoc.ref);
-    }
+    const notificationTasks = notifSnap.docs.map(nDoc => deleteDoc(nDoc.ref));
+    await Promise.all(notificationTasks);
+
+    // 4. Finally delete the main job document
     await deleteDoc(doc(db, 'jobs', jobId));
 };
